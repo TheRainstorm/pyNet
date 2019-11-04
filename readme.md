@@ -16,3 +16,5 @@
 1. 数据从上往下到达物理层后，以二进制方式写入一个文件作为**物理媒介**
 2. 实现广播：遍历一个网络内的所有主机及路由器，另其读取文件
 
+## 效果
+![show](https://github.com/TheRainstorm/pyNet/raw/master/img/Snipaste_2019-11-04_08-32-30.png)

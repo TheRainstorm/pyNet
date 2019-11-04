@@ -260,8 +260,9 @@ window.title('PyNet-beta')
 window.resizable(0,0)
 window.wm_attributes('-topmost',0)
 # window.wm_attributes('-topmost',1)
-WWidth = 1600
-WHeight = 1000
+scale = 0.65
+WWidth = int(1600*scale)
+WHeight = int(1000*scale)
 window.geometry(str(WWidth)+'x'+str(WHeight))
 
 # flat, groove, raised, ridge, solid, or sunken
@@ -293,15 +294,15 @@ router_list = []
 net_list = []
 for i,place in enumerate(host_place):
     host = Host(i,canvas_l)
-    host.move_to((place[0],800-place[1]))
+    host.move_to((scale*place[0],scale*(800-place[1])))
     host_list.append(host)
 for i,place in enumerate(router_place):
     router = Router(i,canvas_l)
-    router.move_to((place[0],800-place[1]))
+    router.move_to((scale*place[0],scale*(800-place[1])))
     router_list.append(router)
 for i,place in enumerate(net_place):
     net = NetCloud(i,canvas_l)
-    net.move_to((place[0],800-place[1]))
+    net.move_to((scale*place[0],scale*(800-place[1])))
     net_list.append(net)
 
 net_list[0].child_hosts=[0,1]
