@@ -12,6 +12,8 @@ from code_and_decode import *
 MAC=0 #每次自增1，确保每台机器mac不同
 LEN = 350 #length to show 
 
+if not os.path.exists('tmp'):
+    os.makedirs('tmp')
 def transmit(bitstream, __d_net_ip):
     net_tag_id =int(__d_net_ip.split('.')[-2])
     # print(net_tag_id)

@@ -17,4 +17,4 @@
 2. 实现广播：遍历一个网络内的所有主机及路由器，另其读取文件
 
 ## 效果
-![show](https://github.com/TheRainstorm/pyNet/raw/master/img/Snipaste_2019-11-05_20-36-56.png)
+![show](https://gitee.com/yuanfuyan/pyNet/raw/master/img/Snipaste_2019-11-05_20-36-56.png)
