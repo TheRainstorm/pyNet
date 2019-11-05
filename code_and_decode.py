@@ -90,19 +90,50 @@ def decode_trans_message(message):
     return message_appli,dic
 
 
+
 # 网络层
+
+# 分片
+def slice(message, d_ip, s_ip, MTU = 1400):
+    packet_queue = []
+    data_length = len(message)
+    cnt = 0
+    while data_length>0:
+        if data_length>MTU:
+            flag = 5 #MF=1 DF=0
+            sz = MTU
+        else:
+            flag = 0 #MF=0 DF=0
+            sz = data_length
+        offset = cnt*MTU//8
+
+        message_slice = message[cnt*MTU:(cnt+1)*MTU]
+
+        ip_header = encode_IP_segment(d_ip,s_ip,szWhole=sz, flag=flag, sliceOffset=offset)
+        ip_packet = ip_header+message_slice
+
+        packet_queue.append(ip_packet)
+        cnt += 1
+        data_length -= MTU
+    return packet_queue
+
+
 def extract_net_ip(ip, mask=None):
     L = ip.split('.')
     L[3]='0'
     return '.'.join(L)
 
-def encode_1st(version, szHeader, server_type, szWhole):
-    return int.to_bytes((version * 16 + szHeader), 1, 'little') + int.to_bytes(server_type, 1, 'little') + int.to_bytes(szWhole, 2, 'little');
+def encode_1st(version, szHeader, server_type,identi):
+    return int.to_bytes((version * 16 + szHeader), 1, 'little') + int.to_bytes(server_type, 1, 'little') + int.to_bytes(identi, 2, 'little');
 
-def encode_2nd(identi, flag, sliceOffset):
-    return int.to_bytes(identi, 2, 'little') + int.to_bytes((flag * 8192 + sliceOffset), 2, 'little');
+def encode_2nd(whole_size):
+    return int.to_bytes(whole_size&0x00ffffff,4,'little')
 
-def encode_3rd(TTL, protocol, Inspection_head):
+def encode_3rd(flag, sliceOffset):
+    return int.to_bytes(flag, 1, 'little')+\
+           int.to_bytes(sliceOffset,3,'little');
+
+def encode_4th(TTL, protocol, Inspection_head):
     return int.to_bytes(TTL, 1, 'little') + int.to_bytes(protocol, 1, 'little') + int.to_bytes(Inspection_head, 2, 'little');
 
 # ip是字符串;
@@ -116,22 +147,24 @@ def encode_ip(ip):
     return p2;
 
 def encode_IP_segment(d_ip,ip, version=1, szHeader=0, server_type=0, szWhole=0, identi=0, flag=0, sliceOffset=0, TTL=0, protocol=0, Inspection_head=0):
-    return encode_1st(version, szHeader, server_type, szWhole) + encode_2nd(identi, flag, sliceOffset) + encode_3rd(TTL, protocol, Inspection_head) + encode_ip(ip) + encode_ip(d_ip);
+    return encode_1st(version, szHeader, server_type, identi) + encode_2nd(szWhole) + encode_3rd(flag, sliceOffset) + encode_4th(TTL, protocol, Inspection_head) + encode_ip(ip) + encode_ip(d_ip);
 # 解封装IP数据报的第一行
 def decode_1st(byte):
     version_int = byte[0] // 16;
     sizeOfHeader_int = byte[0] % 16;
     server_type_int = byte[1];
-    whole_size_int = int.from_bytes(byte[2:],'little');
-    return version_int, sizeOfHeader_int, server_type_int, whole_size_int;
+    identi_int = int.from_bytes(byte[2:],'little');
+    return version_int, sizeOfHeader_int, server_type_int, identi_int;
 
 def decode_2nd(byte):
-    identi = byte[0] * 256 + byte[1];
-    flag = int.from_bytes(byte[2:], 'little') // 8192;
-    sliceOffset = int.from_bytes(byte[2:], 'little') % 8192;
-    return identi, flag, sliceOffset;
-    
+    whole_size = int.from_bytes(byte[:3],'little')
+    return whole_size
 def decode_3rd(byte):
+    flag = byte[0]
+    sliceOffset = int.from_bytes(byte[1:], 'little')
+    return flag, sliceOffset;
+    
+def decode_4th(byte):
     TTL = byte[0];
     protocol = byte[1];
     Inspection_head = int.from_bytes(byte[2:], 'little');
@@ -144,16 +177,16 @@ def decode_ip(byte):
     return ip;
 
 def decode_IP_segment(ip_packet):
-    message = ip_packet[20:];
-    ip_Header = ip_packet[:20];
+    message = ip_packet[24:];
+    ip_Header = ip_packet[:24];
     dic = {};
-    dic["版本号:"], dic["首部长度"], dic["区分服务"], dic["总长度"] = decode_1st(ip_packet[0:4]);
-    dic["标识"], dic["标志"], dic["片偏移"] = decode_2nd(ip_packet[4:8]);
-    dic["生存时间"], dic["协议"], dic["首部检验和"] = decode_3rd(ip_packet[8:12]);
-    dic["源地址"] = decode_ip(ip_packet[12:16]);
-    dic["目的地址"] = decode_ip(ip_packet[16:]);
+    dic["版本号:"], dic["首部长度"], dic["区分服务"], dic["标识"] = decode_1st(ip_Header[0:4]);
+    dic["总长度"] = decode_2nd(ip_Header[4:8]);
+    dic["标志"], dic["片偏移"] = decode_3rd(ip_Header[8:12]);
+    dic["生存时间"], dic["协议"], dic["首部检验和"] = decode_4th(ip_Header[12:16]);
+    dic["源地址"] = decode_ip(ip_Header[16:20]);
+    dic["目的地址"] = decode_ip(ip_Header[20:]);
     return message, dic;
-
 
 #数据链路层
 def encode_mac(mac):

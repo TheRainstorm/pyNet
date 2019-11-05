@@ -49,6 +49,7 @@ class Host:
         # # 数据链路层
         # self.d_mac = 0 # 下一站mac
         # self.next_ip = ''
+        self.cache = b'' # ip packet slice 解析后的运输层报文缓存
 
         # 画图使用
         self.canvas=canvas
@@ -68,7 +69,7 @@ class Host:
 
     def service(self): # 应用层文件服务
         flag, message, s_ip = self.rcv()
-        if 0==flag: #不是自己的消息
+        if 0==flag: #不是自己的消息/或ip packet还未集齐
             return 0
 
         #应用层
@@ -76,7 +77,7 @@ class Host:
 
         #is Request
         if dic_appli['type']=='Request':
-            msg = '\nhost: %s get request from host: %s'%(self.ip,s_ip)
+            msg = '\nhost: %s get request from host: %s\n'%(self.ip,s_ip)
             append_message(msg)
 
             # response
@@ -124,7 +125,7 @@ class Host:
 
         # is Response
         elif dic_appli['type']=='Response':
-            msg = '\nhost: %s get response from host: %s'%(self.ip,s_ip)
+            msg = '\nhost: %s get response from host: %s\n'%(self.ip,s_ip)
             append_message(msg)
 
             # show
@@ -152,9 +153,9 @@ class Host:
     # 应用层
         message,d_ip = encode_request(url)
 
-        msg = '\n应用层报文:\n%s'%message
-        if len(msg)>LEN:
-            msg = msg[:LEN]+'......\n'
+        msg = '\n应用层报文:\n%s'%message[:LEN]
+        if len(message)>LEN:
+            msg += '...\n'
         append_message(msg)
 
         self.send(d_ip,message)
@@ -162,52 +163,58 @@ class Host:
     def send(self,d_ip,message):
     # 运输层
         message = '|Transport header|'.encode('utf-8')+message
-
-        msg = '\n运输层 datagram:\n%s\n'%(message)
-        if len(msg)>LEN:
-            msg = msg[:LEN]+'......\n'
+        msg = '\n运输层报文:\n%s'%message[:LEN]
+        if len(message)>LEN:
+            msg += '...\n'
         append_message(msg)
     # 网络层
-        ip_header = encode_IP_segment(d_ip,self.ip)
-        ip_packet = ip_header+message
-
-        msg = '\n网络层 packet:\n%s\n'%(ip_packet)
-        if len(msg)>LEN:
-            msg = msg[:LEN]+'......\n'
-        append_message(msg)
-
-        d_net_ip = extract_net_ip(d_ip)
-        if d_net_ip==extract_net_ip(self.ip): # 同一局域网
-            next_ip = d_ip
-        else: # 查找路由表
-            if self.router_table.get(d_net_ip)==None:
-                next_ip = self.router_table['default'] # 默认网关
+        ip_packet_queue = slice(message,d_ip,self.ip,MTU=1400)
+        for i,ip_packet in enumerate(ip_packet_queue):
+            if i<2:
+                msg = '\n网络层 sending packet slice %d:\n'%(i)
+                msg += '%s'%ip_packet[:LEN]
+                if len(ip_packet)>LEN:
+                    msg += '...\n'
+                append_message(msg)
+            elif i==len(ip_packet_queue)-1:
+                msg = '\n网络层 sending last packet slice %d:\n'%(i)
+                msg += '...%s\n'%ip_packet[-LEN:]
+                append_message(msg)
             else:
-                next_ip = self.router_table[d_net_ip]
+                append_message('sending packet slice %d...\n'%(i))
 
-        # search cache for mac or use ARP
-        if self.mac_cache.get(next_ip)==None:
-            print('error,host can\'t find mac')
-        else:
-            d_mac = self.mac_cache[next_ip]
-    # 数据链路层
-        frame = encode_frame(d_mac,self.mac,ip_packet)
+            d_net_ip = extract_net_ip(d_ip)
+            if d_net_ip==extract_net_ip(self.ip): # 同一局域网
+                next_ip = d_ip
+            else: # 查找路由表
+                if self.router_table.get(d_net_ip)==None:
+                    next_ip = self.router_table['default'] # 默认网关
+                else:
+                    next_ip = self.router_table[d_net_ip]
 
-        msg = '\n数据链路层 frame:\n%s\n'%(frame)
-        if len(msg)>LEN:
-            msg = msg[:LEN]+'......\n'
-        append_message(msg)
-    # 物理层
-        bitstream = b'START'+frame
+            # search cache for mac or use ARP
+            if self.mac_cache.get(next_ip)==None:
+                print('error,host can\'t find mac')
+            else:
+                d_mac = self.mac_cache[next_ip]
+        # 数据链路层
+            frame = encode_frame(d_mac,self.mac,ip_packet)
+            if i == 0:
+                msg = '\n数据链路层 frame:\n%s'%frame[:LEN]
+                if len(frame)>LEN:
+                    msg += '...\n'
+                append_message(msg)
+        # 物理层
+            bitstream = b'START'+frame
+            if i == 0:
+                msg = '\n物理层 bitstream:\n%s'%bitstream[:LEN]
+                if len(bitstream)>LEN:
+                    msg += '...\n'
+                append_message(msg)
 
-        msg = '\n物理层 bitstream:\n%s\n'%(bitstream)
-        if len(msg)>LEN:
-            msg = msg[:LEN]+'......\n'
-        append_message(msg)
-
-        # put the bitstream on the bus
-        __d_net_ip = extract_net_ip(next_ip) #can't see
-        transmit(bitstream, __d_net_ip) #在指定网络内发射
+            # put the bitstream on the bus
+            __d_net_ip = extract_net_ip(next_ip) #can't see
+            transmit(bitstream, __d_net_ip) #在指定网络内发射
     def rcv(self):
     # 物理层
         with open('tmp/bitstream','rb') as file:
@@ -225,6 +232,17 @@ class Host:
         ip_packet,dic_fra = decode_frame(frame)
     #网络层
         message, dic_net =decode_IP_segment(ip_packet)
+
+        self.cache += message
+        if dic_net['标志'] == 5: #More Fragment
+            i = dic_net['片偏移']*8//dic_net['总长度']
+            msg = '\nreceiving packet slice %d...\n'%(i)
+            append_message(msg)
+            return 0,b'',''
+        message = self.cache #已集齐
+        append_message('\n切片集齐\n')
+        self.cache = b'' #清空缓存
+
         s_ip = dic_net['源地址']
     #传输层
         message,dic_trans = decode_trans_message(message)
@@ -278,7 +296,7 @@ class Router:
 
             # routing
             msg = 'Router%d get the packet\n'%(self.tag_id)
-            append_message(msg)
+            # append_message(msg)
             self.routing(s_mac)
             return 1
 
@@ -310,9 +328,7 @@ class Router:
             print('error,router %d can\'t find mac'%(self.tag_id))
         else:
             d_mac = self.mac_cache[next_ip]
-        # print(self.macs)
-        # print(port)
-        append_message(msg)
+        # append_message(msg)
     # 数据链路层
             # 改变 src 和 des mac
         frame = encode_frame(d_mac,self.macs[port],ip_packet)
