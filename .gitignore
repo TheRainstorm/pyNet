@@ -1,5 +1,5 @@
 _pycache_/
 *.pyc
 bitstream
-tmp/
+tmp/*
 test*.py

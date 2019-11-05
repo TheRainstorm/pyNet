@@ -15,7 +15,7 @@ LEN = 350 #length to show
 def transmit(bitstream, __d_net_ip):
     net_tag_id =int(__d_net_ip.split('.')[-2])
     # print(net_tag_id)
-    with open('bitstream','wb') as file:
+    with open('tmp/bitstream','wb') as file:
         file.write(bitstream)
 
     def broadcast_to_net(net_tag_id):
@@ -83,12 +83,12 @@ class Host:
             File = dic_appli['File']
             Accept = dic_appli['Accept']
             
-            if os.path.exists(File):
+            if os.path.exists('src/'+File):
                 State = 1 #可响应，200 ok
 
                 file_ex = File.split('.')[1]
                 FileType = {'txt':'text','png':'img','jpg':'img'}[file_ex]
-                with open(File,'rb') as fp:
+                with open('src/'+File,'rb') as fp:
                     Body = fp.read()
 
                 if FileType=='img': #图片
@@ -102,7 +102,7 @@ class Host:
                         return str(round(fsize/1024.0,2))+'KB'
                     else:
                         return str(round(fsize/1024.0/1024.0,2))+'MB'
-                FileSize = get_FileSize(File)
+                FileSize = get_FileSize('src/'+File)
                 
                 dic = {}
                 dic['File'] = File
@@ -128,15 +128,18 @@ class Host:
             append_message(msg)
 
             # show
+            from uuid import uuid1
             if dic_appli['state_code']!='200':
                 print(dic_appli['state_code']+dic_appli['description'])
             elif dic_appli['FileType']=='text':
                 print(body.decode('utf-8'))
             elif dic_appli['FileType']=='img':
                 file_name = dic_appli['File']
-                with open('tmp/'+file_name,'wb') as fp:
+                file_ex = file_name.split('.')[1]
+                u_name = str(uuid1())+'.'+file_ex
+                with open('tmp/'+u_name,'wb') as fp:
                     fp.write(base64.b64decode(body))
-                img = io.imread('tmp/'+file_name)
+                img = io.imread('tmp/'+u_name)
                 io.imshow(img)
                 io.show()
             else:
@@ -207,7 +210,7 @@ class Host:
         transmit(bitstream, __d_net_ip) #在指定网络内发射
     def rcv(self):
     # 物理层
-        with open('bitstream','rb') as file:
+        with open('tmp/bitstream','rb') as file:
             START = file.read(5)
             if START!=b'START':
                 print('\nbitstream error\n')
@@ -256,7 +259,7 @@ class Router:
         self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
 
     def read(self,port):
-        with open('bitstream','rb') as file:
+        with open('tmp/bitstream','rb') as file:
         # 物理层
             START = file.read(5)
             if START!=b'START':
