@@ -91,6 +91,11 @@ def decode_trans_message(message):
 
 
 # 网络层
+def extract_net_ip(ip, mask=None):
+    L = ip.split('.')
+    L[3]='0'
+    return '.'.join(L)
+
 def encode_1st(version, szHeader, server_type, szWhole):
     return int.to_bytes((version * 16 + szHeader), 1, 'little') + int.to_bytes(server_type, 1, 'little') + int.to_bytes(szWhole, 2, 'little');
 
@@ -142,11 +147,11 @@ def decode_IP_segment(ip_packet):
     message = ip_packet[20:];
     ip_Header = ip_packet[:20];
     dic = {};
-    dic["版本号:"], dic["首部长度"], dic["区分服务"], dic["总长度"] = decode_1st(ip_packet[0:5]);
-    dic["标识"], dic["标志"], dic["片偏移"] = decode_2nd(ip_packet[5:10]);
-    dic["生存时间"], dic["协议"], dic["首部检验和"] = decode_3rd(ip_packet[10:15]);
-    dic["源地址"] = decode_ip(ip_packet[15:20]);
-    dic["目的地址"] = decode_ip(ip_packet[20:]);
+    dic["版本号:"], dic["首部长度"], dic["区分服务"], dic["总长度"] = decode_1st(ip_packet[0:4]);
+    dic["标识"], dic["标志"], dic["片偏移"] = decode_2nd(ip_packet[4:8]);
+    dic["生存时间"], dic["协议"], dic["首部检验和"] = decode_3rd(ip_packet[8:12]);
+    dic["源地址"] = decode_ip(ip_packet[12:16]);
+    dic["目的地址"] = decode_ip(ip_packet[16:]);
     return message, dic;
 
 

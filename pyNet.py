@@ -5,16 +5,12 @@ import matplotlib.pyplot as plt
 import time
 import random
 import os
+import base64
 
 from code_and_decode import *
 
 MAC=0 #每次自增1，确保每台机器mac不同
 LEN = 350 #length to show 
-
-def extract_net_ip(ip, mask=None):
-    L = ip.split('.')
-    L[3]='0'
-    return '.'.join(L)
 
 def transmit(bitstream, __d_net_ip):
     net_tag_id =int(__d_net_ip.split('.')[-2])
@@ -24,9 +20,15 @@ def transmit(bitstream, __d_net_ip):
 
     def broadcast_to_net(net_tag_id):
         for host_tag_id in net_list[net_tag_id].child_hosts:
-            host_list[host_tag_id].service()
-        for router_tag_id,port in net_list[net_tag_id].child_routers:
-            router_list[router_tag_id].read(port)
+            flag = host_list[host_tag_id].service()
+            if flag == 1:
+                break
+        if flag == 1:
+            pass
+        else:
+            for router_tag_id,port in net_list[net_tag_id].child_routers:
+                if router_list[router_tag_id].read(port)==1:
+                    break
     broadcast_to_net(net_tag_id)
 
 # class router_table:
@@ -41,11 +43,19 @@ class Host:
         self.router_table = {} #路由表
         self.mac_cache = {} #mac 缓存
 
+        #协议栈数据传递
+        # # 网络层
+        # self.d_ip = '' # 本次请求目的ip
+        # # 数据链路层
+        # self.d_mac = 0 # 下一站mac
+        # self.next_ip = ''
+
+        # 画图使用
         self.canvas=canvas
         self.tag_id = tag_id
         self._width = 48
         self._height = 48
-        self.x = 0 #image center place, left top,left top,left top as origin
+        self.x = 0 # image center place, left top,left top,left top as origin
         self.y = 0
         self.id=canvas.create_image(0, 0, anchor='nw', image=img_host)
 
@@ -54,91 +64,85 @@ class Host:
         self.canvas.coords(self.id,(pos[0],des_y))
         self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
 
-    def service(self): # 文件服务
-        with open('bitstream','rb') as file:
-        # 物理层
-            START = file.read(5)
-            if START!=b'START':
-                print('error')
-            frame = file.read()
-        # 数据链路层
-            d_mac = int.from_bytes(file.read(6),byteorder='little')
-            if d_mac == self.mac:
-                ip_packet,dic_fra = decode_frame(frame)
-            #网络层
-                message, dic_net =decode_IP_segment(ip_packet)
-                s_ip = dic_net['源地址']
-            #传输层
-                message,dic_trans = decode_trans_message(message)
-            #应用层
-                body,dic_appli = decode_appli_message(message)
+    def service(self): # 应用层文件服务
+        flag, message, s_ip = self.rcv()
+        if 0==flag: #不是自己的消息
+            return 0
 
-                #is Request
-                if dic_appli['type']=='Request':
-                    msg = '\nhost: %s get request from host: %s'%(self.ip,s_ip)
-                    append_message(msg)
+        #应用层
+        body,dic_appli = decode_appli_message(message)
 
-                    # response
-                    File = dic_appli['File']
-                    Accept = dic_appli['Accept']
-                    
-                    if os.path.exists(File):
-                        State = 1 #可响应，200 ok
+        #is Request
+        if dic_appli['type']=='Request':
+            msg = '\nhost: %s get request from host: %s'%(self.ip,s_ip)
+            append_message(msg)
 
-                        with open(File,'rb') as fp:
-                            Body = fp.read()
-                        def get_FileSize(filePath):
-                            fsize = os.path.getsize(filePath)
-                            if fsize<1024:
-                                return str(fsize)+'B'
-                            elif fsize<1024*1024:
-                                return str(round(fsize/1024.0,2))+'KB'
-                            else:
-                                return str(round(fsize/1024.0/1024.0,2))+'MB'
-                        FileSize = get_FileSize(File)
+            # response
+            File = dic_appli['File']
+            Accept = dic_appli['Accept']
+            
+            if os.path.exists(File):
+                State = 1 #可响应，200 ok
 
-                        file_ex = File.split('.')[1]
-                        FileType = {'txt':'text','png':'img','jpg':'img'}[file_ex]
-                        dic = {}
-                        dic['File'] = File
-                        dic['FileSize']=FileSize
-                        dic['FileType']=FileType
+                file_ex = File.split('.')[1]
+                FileType = {'txt':'text','png':'img','jpg':'img'}[file_ex]
+                with open(File,'rb') as fp:
+                    Body = fp.read()
+
+                if FileType=='img': #图片
+                    Body = base64.b64encode(Body)
+
+                def get_FileSize(filePath):
+                    fsize = os.path.getsize(filePath)
+                    if fsize<1024:
+                        return str(fsize)+'B'
+                    elif fsize<1024*1024:
+                        return str(round(fsize/1024.0,2))+'KB'
                     else:
-                        State = 0 #404 not found
-                        dic = {}
-                        Body = b'' # empty
+                        return str(round(fsize/1024.0/1024.0,2))+'MB'
+                FileSize = get_FileSize(File)
+                
+                dic = {}
+                dic['File'] = File
+                dic['FileSize']=FileSize
+                dic['FileType']=FileType
+            else:
+                State = 0 #404 not found
+                dic = {}
+                Body = b'' # empty
 
-                    message = encode_response(State,dic,Body)
-                    # print(message)
-                    msg = '\n应用层报文:\n%s'%message
-                    if len(msg)>LEN:
-                        msg = msg[:LEN]+'......\n'
-                    append_message(msg)
+            message = encode_response(State,dic,Body)
+            # print(message)
+            msg = '\n应用层报文:\n%s'%message
+            if len(msg)>LEN:
+                msg = msg[:LEN]+'......\n'
+            append_message(msg)
 
-                    self.send(s_ip,message)
+            self.send(s_ip,message)
 
-                # is Response
-                elif dic_appli['type']=='Response':
-                    msg = '\nhost: %s get response from host: %s'%(self.ip,s_ip)
-                    append_message(msg)
+        # is Response
+        elif dic_appli['type']=='Response':
+            msg = '\nhost: %s get response from host: %s'%(self.ip,s_ip)
+            append_message(msg)
 
-                    # show
-                    if dic_appli['state_code']!='200':
-                        print(dic_appli['state_code']+dic_appli['description'])
-                    elif dic_appli['FileType']=='text':
-                        print(body.decode('utf-8'))
-                    elif dic_appli['FileType']=='img':
-                        file_name = dic_appli['File']
-                        with open('tmp/'+file_name,'wb') as fp:
-                            fp.write(body)
-                        img = io.imread('tmp/'+file_name)
-                        io.imshow(img)
-                        io.show()
-                    else:
-                        print('File type don\'t support!\n')
-                else:
-                    print('\napplication message mess!\n')
+            # show
+            if dic_appli['state_code']!='200':
+                print(dic_appli['state_code']+dic_appli['description'])
+            elif dic_appli['FileType']=='text':
+                print(body.decode('utf-8'))
+            elif dic_appli['FileType']=='img':
+                file_name = dic_appli['File']
+                with open('tmp/'+file_name,'wb') as fp:
+                    fp.write(base64.b64decode(body))
+                img = io.imread('tmp/'+file_name)
+                io.imshow(img)
+                io.show()
+            else:
+                print('File type don\'t support!\n')
+        else:
+            print('\napplication message mess!\n')
 
+    # def client(self,url):
     def request(self,url):
     # 应用层
         message,d_ip = encode_request(url)
@@ -149,9 +153,6 @@ class Host:
         append_message(msg)
 
         self.send(d_ip,message)
-
-    def response(self,message,ip):
-        pass
 
     def send(self,d_ip,message):
     # 运输层
@@ -170,16 +171,15 @@ class Host:
             msg = msg[:LEN]+'......\n'
         append_message(msg)
 
-        # get d_ip from ip_header (we already have)
         d_net_ip = extract_net_ip(d_ip)
-
         if d_net_ip==extract_net_ip(self.ip): # 同一局域网
             next_ip = d_ip
         else: # 查找路由表
             if self.router_table.get(d_net_ip)==None:
                 next_ip = self.router_table['default'] # 默认网关
             else:
-                next_ip = self.router_table[d_net_ip] 
+                next_ip = self.router_table[d_net_ip]
+
         # search cache for mac or use ARP
         if self.mac_cache.get(next_ip)==None:
             print('error,host can\'t find mac')
@@ -203,7 +203,27 @@ class Host:
         # put the bitstream on the bus
         __d_net_ip = extract_net_ip(next_ip) #can't see
         transmit(bitstream, __d_net_ip) #在指定网络内发射
+    def rcv(self):
+    # 物理层
+        with open('bitstream','rb') as file:
+            START = file.read(5)
+            if START!=b'START':
+                print('\nbitstream error\n')
 
+            d_mac_bys = file.read(6)
+            d_mac = int.from_bytes(d_mac_bys,byteorder='little')
+            if d_mac!=self.mac:
+                return 0,b'',''  #不是自己的消息，退出
+            else:
+                frame = d_mac_bys+file.read()
+    # 数据链路层
+        ip_packet,dic_fra = decode_frame(frame)
+    #网络层
+        message, dic_net =decode_IP_segment(ip_packet)
+        s_ip = dic_net['源地址']
+    #传输层
+        message,dic_trans = decode_trans_message(message)
+        return 1,message,s_ip
 
 class Router:
     def __init__(self,tag_id,canvas):
@@ -232,37 +252,43 @@ class Router:
 
     def read(self,port):
         with open('bitstream','rb') as file:
-            # 物理层
+        # 物理层
             START = file.read(5)
             if START!=b'START':
                 print('error')
-            frame = file.read()
-            d_mac = int.from_bytes(file.read(6),byteorder='little')
-            if d_mac == self.macs[port]:
-            # 数据链路层
-                ip_packet,dic_fra = decode_frame(frame)
+            d_mac_bys = file.read(6)
+            d_mac = int.from_bytes(d_mac_bys,byteorder='little')
+            if d_mac!=self.macs[port]:
+                return 0  #不是自己的消息，退出
+            else:
+                frame = d_mac_bys+file.read()
+        # 数据链路层
+            ip_packet,dic_fra = decode_frame(frame)
+            s_mac = dic_fra['s_mac']
 
-                s_mac = dic_fra['s_mac']
-                self.wait_queue.append(ip_packet)
+            self.wait_queue.append(ip_packet)
 
-                # routing
-                msg = 'Router%d get the packet\n'%(self.tag_id)
-                append_message(msg)
-                self.routing(s_mac)
+            # routing
+            msg = 'Router%d get the packet\n'%(self.tag_id)
+            append_message(msg)
+            self.routing(s_mac)
+            return 1
 
     def routing(self,s_mac):
     #网络层
         ip_packet = self.wait_queue[0]
+        self.wait_queue = self.wait_queue[1:]
 
         message, dic_net =decode_IP_segment(ip_packet)
         d_ip = dic_net['目的地址']
         s_ip = dic_net['源地址']
-
+        # if s_mac==2:
+        #     print(dic_net)
         self_net_ip_list = [extract_net_ip(ip) for ip in self.ips]
         d_net_ip = extract_net_ip(d_ip)
         if d_net_ip in self_net_ip_list:    # 在同一个网络，直接发射
-            msg = '\nRouter%d resend the packet to port%d\n'%(self.tag_id,port)
             port = self_net_ip_list.index(d_net_ip)
+            msg = '\nRouter%d resend the packet to port%d\n'%(self.tag_id,port)
             next_ip = d_ip
         else:                               # 在不同网络，查找路由表
             if self.router_table.get(d_ip)==None:
@@ -276,7 +302,8 @@ class Router:
             print('error,router %d can\'t find mac'%(self.tag_id))
         else:
             d_mac = self.mac_cache[next_ip]
-
+        # print(self.macs)
+        # print(port)
         append_message(msg)
     # 数据链路层
             # 改变 src 和 des mac
@@ -488,7 +515,7 @@ text_message.place(relx=0.5+0.005, rely=0+0.008, relwidth=0.5-0.01,relheight=1-0
 text_message.insert('end','Message>>')
 
 #for debug
-en_url.insert('end','https://192.168.0.7/text.txt')
+en_url.insert('end','https://192.168.1.3/bug.png')
 msg = '\ncurrent host:\n'+\
       '\tmac: %x\n'%(curr_host.mac)+\
       '\tip : %s\n'%(curr_host.ip)

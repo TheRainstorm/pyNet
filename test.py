@@ -7,14 +7,14 @@ request = b'Request https://192.168.0.7/test.txt HTTPS:\r\nHost: 192.168.0.7\r\n
 
 from code_and_decode import *
 
-# ip_packet = encode_IP_segment('192.168.0.7','192.168.0.2') + tcp_message
+ip_packet = encode_IP_segment('192.168.0.7','192.168.0.2') + tcp_message
 
-# if ip_packet0 == ip_packet:
-#     print('True')
-# message, dic = decode_IP_segment(ip_packet)
-# print(message)
+if ip_packet0 == ip_packet:
+    print('True')
+message, dic = decode_IP_segment(ip_packet)
+print(message,dic)
 
-body,dic_appli = decode_appli_message(request)
+# body,dic_appli = decode_appli_message(request)
 
 
-print(body,dic_appli)
+# print(body,dic_appli)
