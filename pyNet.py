@@ -1,9 +1,15 @@
 import tkinter as tk
 from PIL import Image, ImageTk
+from skimage import io
+import matplotlib.pyplot as plt
 import time
 import random
+import os
+
+from code_and_decode import *
 
 MAC=0 #每次自增1，确保每台机器mac不同
+LEN = 350 #length to show 
 
 def extract_net_ip(ip, mask=None):
     L = ip.split('.')
@@ -18,7 +24,7 @@ def transmit(bitstream, __d_net_ip):
 
     def broadcast_to_net(net_tag_id):
         for host_tag_id in net_list[net_tag_id].child_hosts:
-            host_list[host_tag_id].read()
+            host_list[host_tag_id].service()
         for router_tag_id,port in net_list[net_tag_id].child_routers:
             router_list[router_tag_id].read(port)
     broadcast_to_net(net_tag_id)
@@ -32,125 +38,171 @@ class Host:
         global MAC
         self.mac = MAC;MAC+=1
         self.ip = '0.0.0.0'
-        self.router_table = {}
-        self.mac_cache = {}
+        self.router_table = {} #路由表
+        self.mac_cache = {} #mac 缓存
 
         self.canvas=canvas
         self.tag_id = tag_id
-        self._width = 35
-        self._height = 60
+        self._width = 48
+        self._height = 48
+        self.x = 0 #image center place, left top,left top,left top as origin
+        self.y = 0
         self.id=canvas.create_image(0, 0, anchor='nw', image=img_host)
 
-    def move_to(self,pos): # origin in the left bottom
+    def move_to(self,pos): # pos: (x,y), origin in the left bottom
         des_y = self.canvas.winfo_height()-pos[1]-self._height
         self.canvas.coords(self.id,(pos[0],des_y))
+        self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
 
-    def read(self):
+    def service(self): # 文件服务
         with open('bitstream','rb') as file:
         # 物理层
             START = file.read(5)
             if START!=b'START':
                 print('error')
+            frame = file.read()
         # 数据链路层
             d_mac = int.from_bytes(file.read(6),byteorder='little')
             if d_mac == self.mac:
+                ip_packet,dic_fra = decode_frame(frame)
             #网络层
-                ip_packet = file.read().decode('utf-8')
-                # print(ip_packet.decode('utf-8'))
-                ip_header = ip_packet.split(':')[:5]
-                s_ip = ip_header[4]
-
+                message, dic_net =decode_IP_segment(ip_packet)
+                s_ip = dic_net['源地址']
+            #传输层
+                message,dic_trans = decode_trans_message(message)
             #应用层
-                le = len('tcp_header,')
-                s = ip_packet.split(':')[5][le:le+3]
-                if s=='Req':
+                body,dic_appli = decode_appli_message(message)
+
+                #is Request
+                if dic_appli['type']=='Request':
                     msg = '\nhost: %s get request from host: %s'%(self.ip,s_ip)
                     append_message(msg)
-                    self.response(s_ip)
-                    # print('yes')
-                elif s=='Res':
+
+                    # response
+                    File = dic_appli['File']
+                    Accept = dic_appli['Accept']
+                    
+                    if os.path.exists(File):
+                        State = 1 #可响应，200 ok
+
+                        with open(File,'rb') as fp:
+                            Body = fp.read()
+                        def get_FileSize(filePath):
+                            fsize = os.path.getsize(filePath)
+                            if fsize<1024:
+                                return str(fsize)+'B'
+                            elif fsize<1024*1024:
+                                return str(round(fsize/1024.0,2))+'KB'
+                            else:
+                                return str(round(fsize/1024.0/1024.0,2))+'MB'
+                        FileSize = get_FileSize(File)
+
+                        file_ex = File.split('.')[1]
+                        FileType = {'txt':'text','png':'img','jpg':'img'}[file_ex]
+                        dic = {}
+                        dic['File'] = File
+                        dic['FileSize']=FileSize
+                        dic['FileType']=FileType
+                    else:
+                        State = 0 #404 not found
+                        dic = {}
+                        Body = b'' # empty
+
+                    message = encode_response(State,dic,Body)
+                    # print(message)
+                    msg = '\n应用层报文:\n%s'%message
+                    if len(msg)>LEN:
+                        msg = msg[:LEN]+'......\n'
+                    append_message(msg)
+
+                    self.send(s_ip,message)
+
+                # is Response
+                elif dic_appli['type']=='Response':
                     msg = '\nhost: %s get response from host: %s'%(self.ip,s_ip)
                     append_message(msg)
+
+                    # show
+                    if dic_appli['state_code']!='200':
+                        print(dic_appli['state_code']+dic_appli['description'])
+                    elif dic_appli['FileType']=='text':
+                        print(body.decode('utf-8'))
+                    elif dic_appli['FileType']=='img':
+                        file_name = dic_appli['File']
+                        with open('tmp/'+file_name,'wb') as fp:
+                            fp.write(body)
+                        img = io.imread('tmp/'+file_name)
+                        io.imshow(img)
+                        io.show()
+                    else:
+                        print('File type don\'t support!\n')
                 else:
-                    print('bad')
-                # self.response(s_ip)
+                    print('\napplication message mess!\n')
 
     def request(self,url):
     # 应用层
-        protocal,_,d_ip,file = url.split('/')
-        protocal = protocal[:-1]
-        Accept=file.split('.')[1]
-        Ip = self.ip
+        message,d_ip = encode_request(url)
 
-        message = 'Request\n'+\
-              'URL:\t\t%s\n'%url+\
-              '方法:\t\tGET\n'+\
-              '协议:\t\t%s\n'%(protocal)+\
-              'Accept:\t\t%s\n'%(Accept)+\
-              'Host:\t\t%s\n'%(d_ip)+\
-              'From:\t\t%s\n'%(Ip)
-
-        msg = '\n应用层报文:\n'+message
+        msg = '\n应用层报文:\n%s'%message
+        if len(msg)>LEN:
+            msg = msg[:LEN]+'......\n'
         append_message(msg)
 
-        # message = 'header,body' #char
         self.send(d_ip,message)
 
-    def response(self,ip):
-        # 应用层
-        Ip = self.ip
-
-        message = 'Response\n'+\
-              '状态码:\t\t%s\n'%('200 OK')+\
-              'To:\t\t%s\n'%(ip)+\
-              'From:\t\t%s\n'%(Ip)
-
-        msg = '\n应用层报文:\n'+message
-        append_message(msg)
-
-        # message = 'header,body' #char
-        self.send(ip,message)
+    def response(self,message,ip):
+        pass
 
     def send(self,d_ip,message):
     # 运输层
-        message = 'tcp_header,'+message
+        message = '|Transport header|'.encode('utf-8')+message
 
         msg = '\n运输层 datagram:\n%s\n'%(message)
+        if len(msg)>LEN:
+            msg = msg[:LEN]+'......\n'
         append_message(msg)
     # 网络层
-        ip_packet = 'ip_header:d_ip:'+d_ip+':s_ip:'+self.ip+':'+message
+        ip_header = encode_IP_segment(d_ip,self.ip)
+        ip_packet = ip_header+message
+
         msg = '\n网络层 packet:\n%s\n'%(ip_packet)
+        if len(msg)>LEN:
+            msg = msg[:LEN]+'......\n'
         append_message(msg)
 
         # get d_ip from ip_header (we already have)
         d_net_ip = extract_net_ip(d_ip)
-        if d_net_ip==extract_net_ip(self.ip):
-            next_ip = d_ip #直接发射
+
+        if d_net_ip==extract_net_ip(self.ip): # 同一局域网
+            next_ip = d_ip
         else: # 查找路由表
-            # print(self.router_table)
-            # print(d_net_ip)
             if self.router_table.get(d_net_ip)==None:
-                next_ip = self.router_table['default']
+                next_ip = self.router_table['default'] # 默认网关
             else:
-                next_ip = self.router_table[d_net_ip]
+                next_ip = self.router_table[d_net_ip] 
         # search cache for mac or use ARP
         if self.mac_cache.get(next_ip)==None:
             print('error,host can\'t find mac')
         else:
             d_mac = self.mac_cache[next_ip]
-        # d_mac = 1 # assume we get the mac
     # 数据链路层
-        frame = encode_mac(d_mac)+ip_packet.encode('utf-8') #已为二进制
+        frame = encode_frame(d_mac,self.mac,ip_packet)
+
         msg = '\n数据链路层 frame:\n%s\n'%(frame)
+        if len(msg)>LEN:
+            msg = msg[:LEN]+'......\n'
         append_message(msg)
     # 物理层
-        bitstream = b'START'+frame+b'END'
-        # put the bitstream on the bus
+        bitstream = b'START'+frame
+
         msg = '\n物理层 bitstream:\n%s\n'%(bitstream)
+        if len(msg)>LEN:
+            msg = msg[:LEN]+'......\n'
         append_message(msg)
 
+        # put the bitstream on the bus
         __d_net_ip = extract_net_ip(next_ip) #can't see
-        transmit(bitstream, __d_net_ip)
+        transmit(bitstream, __d_net_ip) #在指定网络内发射
 
 
 class Router:
@@ -167,13 +219,16 @@ class Router:
 
         self.canvas=canvas
         self.tag_id = tag_id
-        self._width = 48
-        self._height = 48
+        self._width = 40
+        self._height = 40
+        self.x = 0 #image place, left top,left top,left top as origin
+        self.y = 0
         self.id=canvas.create_image(0, 0, anchor='nw', image=img_router)
 
-    def move_to(self,pos): # origin in the left bottom
+    def move_to(self,pos): # pos: (x,y), origin in the left bottom
         des_y = self.canvas.winfo_height()-pos[1]-self._height
         self.canvas.coords(self.id,(pos[0],des_y))
+        self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
 
     def read(self,port):
         with open('bitstream','rb') as file:
@@ -181,22 +236,27 @@ class Router:
             START = file.read(5)
             if START!=b'START':
                 print('error')
-            # 数据链路层
+            frame = file.read()
             d_mac = int.from_bytes(file.read(6),byteorder='little')
             if d_mac == self.macs[port]:
-                # 网络层
-                ip_packet = file.read()
-                # print(ip_packet.decode('utf-8'))
+            # 数据链路层
+                ip_packet,dic_fra = decode_frame(frame)
+
+                s_mac = dic_fra['s_mac']
                 self.wait_queue.append(ip_packet)
-                # 转发
+
+                # routing
                 msg = 'Router%d get the packet\n'%(self.tag_id)
                 append_message(msg)
-                self.send()
+                self.routing(s_mac)
 
-    def send(self):
-    # 网络层
-        ip_packet = self.wait_queue[0].decode('utf-8')
-        d_ip = ip_packet.split(':')[2]
+    def routing(self,s_mac):
+    #网络层
+        ip_packet = self.wait_queue[0]
+
+        message, dic_net =decode_IP_segment(ip_packet)
+        d_ip = dic_net['目的地址']
+        s_ip = dic_net['源地址']
 
         self_net_ip_list = [extract_net_ip(ip) for ip in self.ips]
         d_net_ip = extract_net_ip(d_ip)
@@ -206,11 +266,10 @@ class Router:
             next_ip = d_ip
         else:                               # 在不同网络，查找路由表
             if self.router_table.get(d_ip)==None:
-                next_ip = self.router_table['default']
+                next_ip,port = self.router_table['default']
             else:
-                next_ip = self.router_table[d_ip]
+                next_ip,port = self.router_table[d_ip]
             msg = '\nRouter%d resend the packet to host:%s\n'%(self.tag_id,nex_ip)
-            __d_net_ip = extract_net_ip(next_ip) #can't see
         # 查找mac cache
         # print(next_ip)
         if self.mac_cache.get(next_ip)==None:
@@ -220,17 +279,12 @@ class Router:
 
         append_message(msg)
     # 数据链路层
-            # 改变 source mac
-        frame = encode_mac(d_mac)+ip_packet.encode('utf-8')
+            # 改变 src 和 des mac
+        frame = encode_frame(d_mac,self.macs[port],ip_packet)
     # 物理层
-        bitstream = b'START'+frame+b'END'
+        bitstream = b'START'+frame
         __d_net_ip = extract_net_ip(next_ip)
         transmit(bitstream, __d_net_ip)
-
-
-
-def encode_mac(mac):
-    return int.to_bytes(mac,6,byteorder='little')
 
 class NetCloud:
     def __init__(self,tag_id,canvas):
@@ -241,13 +295,16 @@ class NetCloud:
 
         self.canvas=canvas
         self.tag_id = tag_id
-        self._width = 100
-        self._height = 60
+        self._width = 48
+        self._height = 48
+        self.x = 0 #image place, left top,left top,left top as origin
+        self.y = 0
         self.id=canvas.create_image(0, 0, anchor='nw', image=img_net)
 
-    def move_to(self,pos): # origin in the left bottom
+    def move_to(self,pos): # pos: (x,y), origin in the left bottom
         des_y = self.canvas.winfo_height()-pos[1]-self._height
         self.canvas.coords(self.id,(pos[0],des_y))
+        self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
 
 def draw_border():
     L = [canvas_l,canvas_r,canvas_b]
@@ -255,6 +312,9 @@ def draw_border():
         # print(canvas.winfo_height())
         canvas.create_rectangle(0+2,0+2,canvas.winfo_width()-2,canvas.winfo_height()-2,width=10)
 
+################
+## create window
+################
 window=tk.Tk()
 window.title('PyNet-beta')
 window.resizable(0,0)
@@ -275,15 +335,21 @@ canvas_b.place(relx=0,rely=0.8,relwidth=0.5,relheight=0.2)
 
 window.update()
 draw_border()
-# Frame ok
+## window ok ###
 
 ################
 ## create img
 ################
-img_router = tk.PhotoImage(file='img/router.gif')
-img_net = tk.PhotoImage(file='img/net.gif')
-img_host = tk.PhotoImage(file='img/host.gif')
+# img_router = tk.PhotoImage(file='img/router.gif')
+# img_net = tk.PhotoImage(file='img/net.gif')
+# img_host = tk.PhotoImage(file='img/host.gif')
 
+img = Image.open('img/router.png')
+img_router = ImageTk.PhotoImage(img)
+img = Image.open('img/net.png')
+img_net = ImageTk.PhotoImage(img)
+img = Image.open('img/host.png')
+img_host = ImageTk.PhotoImage(img)
 
 host_place=[(20,410),(85,580),(520,90),(650,300),(300,770),(740,500)]
 net_place=[(170,440),(340,185),(490,360),(370,635),(590,600)]
@@ -304,7 +370,13 @@ for i,place in enumerate(net_place):
     net = NetCloud(i,canvas_l)
     net.move_to((scale*place[0],scale*(800-place[1])))
     net_list.append(net)
+window.update()
+## image ok ####
 
+
+################
+## configure net
+################
 net_list[0].child_hosts=[0,1]
 net_list[0].child_routers=[(0,1)] # R0 port 1
 net_list[0].net_ip = '192.168.0.0'
@@ -354,18 +426,41 @@ host_list[4].mac_cache['192.168.3.1'] = router_list[1].macs[1]
 host_list[5].mac_cache['192.168.4.4'] = router_list[1].macs[2]
 
 
-router_list[0].router_table['default']='192.168.2.2'
+router_list[0].router_table['default']='192.168.2.2',2
 router_list[0].mac_cache['192.168.2.2'] = router_list[1].macs[0]
 router_list[0].mac_cache['192.168.0.2'] = host_list[0].mac
 router_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
 router_list[0].mac_cache['192.168.1.3'] = host_list[2].mac
 router_list[0].mac_cache['192.168.2.3'] = host_list[3].mac
 
-router_list[1].router_table['default']='192.168.2.1'
+router_list[1].router_table['default']='192.168.2.1',0
 router_list[1].mac_cache['192.168.2.1'] = router_list[0].macs[2]
 router_list[1].mac_cache['192.168.4.2'] = host_list[5].mac
 
 window.update()
+## net ok ###
+################
+## Draw lines
+################
+def put_bottom(cv,tag_id):
+    tags = cv.find_below(tag_id)
+    while len(tags)!=0:
+        cv.tag_lower(tag_id,tags)
+        tags = cv.find_below(tag_id)
+# print(len(net_list))
+for net in net_list:
+    for host_tag_id in net.child_hosts:
+        line = canvas_l.create_line(net.x,net.y,
+                host_list[host_tag_id].x,
+                host_list[host_tag_id].y,width = 3)
+        put_bottom(canvas_l,line)
+    # print(net.child_routers)
+    for router_tag_id,_ in net.child_routers:
+        line = canvas_l.create_line(net.x,net.y,
+                router_list[router_tag_id].x,
+                router_list[router_tag_id].y,width = 3)
+        put_bottom(canvas_l,line)
+
 
 ################
 ## Send
@@ -393,7 +488,7 @@ text_message.place(relx=0.5+0.005, rely=0+0.008, relwidth=0.5-0.01,relheight=1-0
 text_message.insert('end','Message>>')
 
 #for debug
-en_url.insert('end','https://192.168.0.7/test.txt')
+en_url.insert('end','https://192.168.0.7/text.txt')
 msg = '\ncurrent host:\n'+\
       '\tmac: %x\n'%(curr_host.mac)+\
       '\tip : %s\n'%(curr_host.ip)
