@@ -58,6 +58,8 @@ class Host:
         self.x = 0 # image center place, left top,left top,left top as origin
         self.y = 0
         self.id=canvas.create_image(0, 0, anchor='nw', image=img_host)
+        global item_to_instance_dic
+        item_to_instance_dic[self.id]=self
 
     def move_to(self,pos): # pos: (x,y), origin in the left bottom
         des_y = self.canvas.winfo_height()-pos[1]-self._height
@@ -237,6 +239,7 @@ class Router:
         #网络层
         self.wait_queue = [] #ip_packet,  get one, send one
 
+
         self.canvas=canvas
         self.tag_id = tag_id
         self._width = 40
@@ -244,6 +247,8 @@ class Router:
         self.x = 0 #image place, left top,left top,left top as origin
         self.y = 0
         self.id=canvas.create_image(0, 0, anchor='nw', image=img_router)
+        global item_to_instance_dic
+        item_to_instance_dic[self.id]=self
 
     def move_to(self,pos): # pos: (x,y), origin in the left bottom
         des_y = self.canvas.winfo_height()-pos[1]-self._height
@@ -327,6 +332,8 @@ class NetCloud:
         self.x = 0 #image place, left top,left top,left top as origin
         self.y = 0
         self.id=canvas.create_image(0, 0, anchor='nw', image=img_net)
+        global item_to_instance_dic
+        item_to_instance_dic[self.id]=self
 
     def move_to(self,pos): # pos: (x,y), origin in the left bottom
         des_y = self.canvas.winfo_height()-pos[1]-self._height
@@ -353,12 +360,69 @@ WHeight = int(1000*scale)
 window.geometry(str(WWidth)+'x'+str(WHeight))
 
 # flat, groove, raised, ridge, solid, or sunken
+item_to_instance_dic = {}
+old_label = 0
+def mac_to_str(mac):
+    return '.'.join([hex(e)[2:] for e in int.to_bytes(mac,6,'big')])
+
+def show(event):
+    global old_label
+    item = canvas_l.find_withtag('current')
+    if len(item)!=0:
+        instance = item_to_instance_dic[item[0]]
+        if instance.__class__.__name__=='Host':
+            text = 'host:\n'+\
+                   'mac: %s\n'%(mac_to_str(instance.mac))+\
+                   'ip : %s\n'%(instance.ip)
+        elif instance.__class__.__name__=='Router':
+            text = 'router:\n'+\
+                   'mac0: %s\n'%(mac_to_str(instance.macs[0]))+\
+                   'mac1: %s\n'%(mac_to_str(instance.macs[1]))+\
+                   'mac2: %s\n'%(mac_to_str(instance.macs[2]))+\
+                   'ip0 : %s\n'%(instance.ips[0])+\
+                   'ip1 : %s\n'%(instance.ips[1])+\
+                   'ip2 : %s\n'%(instance.ips[2])
+        elif instance.__class__.__name__=='NetCloud':
+            text = 'net:\n'+\
+                   'net_ip : %s\n'%(instance.net_ip)
+        else:
+            return 0
+
+        if old_label!=0:
+            old_label.destroy()
+        la = tk.Label(window,text=text)
+        la.place(relx=0.01,rely=0.02,relwidth=0.12)
+        old_label = la
+def init_text_message():
+    text_message.delete('1.0', 'end')
+    text_message.insert('end','Message>>')
+
+def show_curr_host():  
+    msg = '\ncurrent host:\n'+\
+          '\tmac: %x\n'%(curr_host.mac)+\
+          '\tip : %s\n'%(curr_host.ip)
+    append_message(msg)
+
+def change_host(event):
+    global old_label
+    global curr_host
+    item = canvas_l.find_withtag('current')
+    if len(item)!=0:
+        instance = item_to_instance_dic[item[0]]
+        if instance.__class__.__name__=='Host':
+            curr_host = instance
+            init_text_message()
+            show_curr_host()
+
 canvas_l=tk.Canvas(window)
 canvas_r=tk.Canvas(window)
 canvas_b=tk.Canvas(window)
 canvas_l.place(relx=0,rely=0,relwidth=0.5,relheight=0.8)
 canvas_r.place(relx=0.5,rely=0,relwidth=0.5,relheight=1)
 canvas_b.place(relx=0,rely=0.8,relwidth=0.5,relheight=0.2)
+canvas_l.bind("<Button-1>",show)
+canvas_l.bind("<Double-Button-1>",change_host)
+
 
 window.update()
 draw_border()
@@ -512,14 +576,12 @@ text_message = ScrolledText(window,font=("隶书",18))
 en_url.place(relx=0.05, rely=0.8+0.05, relwidth=0.2, relheight=0.05)
 btn_send.place(relx=0.3+0.05, rely=0.8+0.05, relwidth=0.05,relheight=0.05)
 text_message.place(relx=0.5+0.005, rely=0+0.008, relwidth=0.5-0.01,relheight=1-0.015)
-text_message.insert('end','Message>>')
+
+init_text_message()
+show_curr_host()
 
 #for debug
 en_url.insert('end','https://192.168.1.3/bug.png')
-msg = '\ncurrent host:\n'+\
-      '\tmac: %x\n'%(curr_host.mac)+\
-      '\tip : %s\n'%(curr_host.ip)
-append_message(msg)
 
 window.update()
 # widget ok

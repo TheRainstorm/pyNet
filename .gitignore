@@ -1,4 +1,5 @@
 _pycache_/
 *.pyc
+bitstream
 tmp/
-test.py
+test*.py
