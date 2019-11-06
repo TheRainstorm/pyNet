@@ -45,6 +45,7 @@ def decode_appli_message(message):
         if message[i:i+4]==b'\r\n\r\n':
             header_end_i = i
             body_start_i = i+4
+            break
         i += 1
     header = message[:header_end_i]
     body = message[body_start_i:]

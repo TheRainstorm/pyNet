@@ -323,9 +323,8 @@ class Router:
                 next_ip,port = self.router_table['default']
             else:
                 next_ip,port = self.router_table[d_ip]
-            msg = '\nRouter%d resend the packet to host:%s\n'%(self.tag_id,nex_ip)
+            msg = '\nRouter%d resend the packet to host:%s\n'%(self.tag_id,next_ip)
         # 查找mac cache
-        # print(next_ip)
         if self.mac_cache.get(next_ip)==None:
             print('error,router %d can\'t find mac'%(self.tag_id))
         else:
@@ -414,6 +413,7 @@ def show(event):
         la = tk.Label(window,text=text)
         la.place(relx=0.01,rely=0.02,relwidth=0.12)
         old_label = la
+
 def init_text_message():
     text_message.delete('1.0', 'end')
     text_message.insert('end','Message>>')
@@ -435,6 +435,18 @@ def change_host(event):
             init_text_message()
             show_curr_host()
 
+def change_des_host(event):
+    item = canvas_l.find_withtag('current')
+    if len(item)!=0:
+        instance = item_to_instance_dic[item[0]]
+        if instance.__class__.__name__=='Host':
+            url = en_url.get()
+            L = url.split('/')
+            L[2]=instance.ip
+            url_c = '/'.join(L)
+            en_url.delete(0,'end')
+            en_url.insert(0,url_c)
+
 canvas_l=tk.Canvas(window)
 canvas_r=tk.Canvas(window)
 canvas_b=tk.Canvas(window)
@@ -443,6 +455,7 @@ canvas_r.place(relx=0.5,rely=0,relwidth=0.5,relheight=1)
 canvas_b.place(relx=0,rely=0.8,relwidth=0.5,relheight=0.2)
 canvas_l.bind("<Button-1>",show)
 canvas_l.bind("<Double-Button-1>",change_host)
+canvas_l.bind("<Button-3>",change_des_host)
 
 
 window.update()
@@ -547,6 +560,8 @@ router_list[0].mac_cache['192.168.2.3'] = host_list[3].mac
 
 router_list[1].router_table['default']='192.168.2.1',0
 router_list[1].mac_cache['192.168.2.1'] = router_list[0].macs[2]
+router_list[1].mac_cache['192.168.2.3'] = host_list[3].mac
+router_list[1].mac_cache['192.168.3.2'] = host_list[4].mac
 router_list[1].mac_cache['192.168.4.2'] = host_list[5].mac
 
 window.update()
@@ -581,6 +596,7 @@ def append_message(s):
     text_message.insert('end',s)
 
 def Send():
+    init_text_message()
     url = en_url.get()
     curr_host.request(url)
 
@@ -602,7 +618,7 @@ init_text_message()
 show_curr_host()
 
 #for debug
-en_url.insert('end','https://192.168.1.3/bug.png')
+en_url.insert('end','https://192.168.1.3/text.txt')
 
 window.update()
 # widget ok
