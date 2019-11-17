@@ -319,7 +319,7 @@ class Router:
                 print('error')
             d_mac_bys = file.read(6)
             d_mac = int.from_bytes(d_mac_bys,byteorder='little')
-            if d_mac!=self.macs[port]:
+            if d_mac!= B_MAC and d_mac!=self.macs[port]:
                 return 0  #不是自己的消息，退出
             else:
                 frame = d_mac_bys+file.read()
@@ -343,6 +343,17 @@ class Router:
         message, dic_net =decode_IP_segment(ip_packet)
         d_ip = dic_net['目的地址']
         s_ip = dic_net['源地址']
+        protocol = dic_net['协议']
+        if protocol==255:
+            ARP_message = message.decode('utf-8')
+            #解析ARP
+            req, src_ip, src_mac, req_ip = ARP_message.split('|')
+            self.mac_cache[src_ip] = macstr_to_int(src_mac) #更新mac缓存
+
+            if req=='req' and req_ip in self.ips: #返回一个ARP响应
+                port = self.ips.index(req_ip)
+                ARP(self.ips[port], self.macs[port], src_ip, req='rsp')
+            return 
         # if s_mac==2:
         #     print(dic_net)
         self_net_ip_list = [extract_net_ip(ip) for ip in self.ips]
@@ -357,11 +368,15 @@ class Router:
             else:
                 next_ip,port = self.router_table[d_ip]
             msg = '\nRouter%d resend the packet to host:%s\n'%(self.tag_id,next_ip)
-        # 查找mac cache
-        if self.mac_cache.get(next_ip)==None:
-            print('error,router %d can\'t find mac'%(self.tag_id))
-        else:
-            d_mac = self.mac_cache[next_ip]
+        # search cache for mac or use ARP
+        while(1):
+            if self.mac_cache.get(next_ip)==None:
+                # print('error,host can\'t find mac')
+                #ARP
+                ARP(self.ips[port], self.macs[port], next_ip)
+            else:
+                d_mac = self.mac_cache[next_ip]
+                break
         # append_message(msg)
     # 数据链路层
             # 改变 src 和 des mac
@@ -580,7 +595,7 @@ host_list[0].router_table['default']='192.168.0.1'
 host_list[1].router_table['default']='192.168.0.1'
 host_list[2].router_table['default']='192.168.1.1'
 host_list[3].router_table['default']='192.168.2.1'
-host_list[0].mac_cache['192.168.0.1'] = router_list[0].macs[1]
+# host_list[0].mac_cache['192.168.0.1'] = router_list[0].macs[1]
 # host_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
 host_list[1].mac_cache['192.168.0.1'] = router_list[0].macs[1]
 host_list[1].mac_cache['192.168.0.2'] = host_list[0].mac
