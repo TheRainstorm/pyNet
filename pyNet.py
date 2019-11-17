@@ -10,6 +10,8 @@ import base64
 from code_and_decode import *
 
 MAC=0 #每次自增1，确保每台机器mac不同
+B_MAC=2**48-1 #broadcast mac
+
 LEN = 350 #length to show 
 
 if not os.path.exists('tmp'):
@@ -22,16 +24,33 @@ def transmit(bitstream, __d_net_ip):
 
     def broadcast_to_net(net_tag_id):
         for host_tag_id in net_list[net_tag_id].child_hosts:
-            flag = host_list[host_tag_id].service()
-            if flag == 1:
-                break
-        if flag == 1:
-            pass
-        else:
-            for router_tag_id,port in net_list[net_tag_id].child_routers:
-                if router_list[router_tag_id].read(port)==1:
-                    break
+            host_list[host_tag_id].service()
+        for router_tag_id,port in net_list[net_tag_id].child_routers:
+            router_list[router_tag_id].read(port)
     broadcast_to_net(net_tag_id)
+
+def ARP(self_ip, self_mac, req_ip, req='req'):
+    '''req取值:'req','rsp',表示是请求还是响应'''
+    if req=='req':
+        msg = '\n\n%s向%s发出ARP请求\n'%(self_ip,req_ip)
+    else:
+        msg = '\n\n%s响应来自%s的ARP请求\n'%(self_ip,req_ip)
+    append_message(msg)
+# 网络层(ARP协议)
+    ip_header = encode_IP_segment(d_ip=req_ip, ip=self_ip, protocol=255)
+    ip_data = (req+'|'+self_ip+'|'+mac_to_str(self_mac)+'|'+req_ip).encode('utf-8')
+
+    ip_packet = ip_header + ip_data
+# 数据链路层 
+    d_mac = B_MAC #全为1, 广播
+    frame = encode_frame(d_mac,self_mac,ip_packet)
+# 物理层
+    bitstream = b'START'+frame
+    msg = '\n物理层 bitstream:\n%s'%bitstream[:LEN]
+
+    # put the bitstream on the bus
+    __d_net_ip = extract_net_ip(req_ip) #can't see
+    transmit(bitstream, __d_net_ip) #在指定网络内发射
 
 # class router_table:
 #     def __init__(self):
@@ -162,7 +181,7 @@ class Host:
 
         self.send(d_ip,message)
 
-    def send(self,d_ip,message):
+    def send(self,d_ip,message): #封装到运输层
     # 运输层
         message = '|Transport header|'.encode('utf-8')+message
         msg = '\n运输层报文:\n%s'%message[:LEN]
@@ -195,10 +214,14 @@ class Host:
                     next_ip = self.router_table[d_net_ip]
 
             # search cache for mac or use ARP
-            if self.mac_cache.get(next_ip)==None:
-                print('error,host can\'t find mac')
-            else:
-                d_mac = self.mac_cache[next_ip]
+            while(1):
+                if self.mac_cache.get(next_ip)==None:
+                    # print('error,host can\'t find mac')
+                    #ARP
+                    ARP(self.ip, self.mac, next_ip)
+                else:
+                    d_mac = self.mac_cache[next_ip]
+                    break
         # 数据链路层
             frame = encode_frame(d_mac,self.mac,ip_packet)
             if i == 0:
@@ -226,7 +249,7 @@ class Host:
 
             d_mac_bys = file.read(6)
             d_mac = int.from_bytes(d_mac_bys,byteorder='little')
-            if d_mac!=self.mac:
+            if d_mac != B_MAC and d_mac!=self.mac:
                 return 0,b'',''  #不是自己的消息，退出
             else:
                 frame = d_mac_bys+file.read()
@@ -234,7 +257,17 @@ class Host:
         ip_packet,dic_fra = decode_frame(frame)
     #网络层
         message, dic_net =decode_IP_segment(ip_packet)
+        #ARP 协议
+        if dic_net['协议']==255:
+            ARP_message = message.decode('utf-8')
+            #解析ARP
+            req, src_ip, src_mac, req_ip = ARP_message.split('|')
+            self.mac_cache[src_ip] = macstr_to_int(src_mac) #更新mac缓存
 
+            if req=='req' and req_ip==self.ip: #返回一个ARP响应
+                ARP(self.ip, self.mac, src_ip, req='rsp')
+            return 0,b'',''
+        #ip 协议
         self.cache += message
         if dic_net['标志'] == 5: #More Fragment
             i = dic_net['片偏移']*8//dic_net['总长度']
@@ -384,6 +417,14 @@ item_to_instance_dic = {}
 old_label = 0
 def mac_to_str(mac):
     return '.'.join([hex(e)[2:] for e in int.to_bytes(mac,6,'big')])
+def macstr_to_int(mac_str):
+    L = mac_str.split('.')
+    s = 0
+    a = 1
+    for e in L[-1::-1]: #倒序
+        s += a*int('0x'+e,16)
+        a *= 255
+    return int(s)
 
 def show(event):
     global old_label
@@ -540,7 +581,7 @@ host_list[1].router_table['default']='192.168.0.1'
 host_list[2].router_table['default']='192.168.1.1'
 host_list[3].router_table['default']='192.168.2.1'
 host_list[0].mac_cache['192.168.0.1'] = router_list[0].macs[1]
-host_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
+# host_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
 host_list[1].mac_cache['192.168.0.1'] = router_list[0].macs[1]
 host_list[1].mac_cache['192.168.0.2'] = host_list[0].mac
 host_list[2].mac_cache['192.168.1.1'] = router_list[0].macs[0]
