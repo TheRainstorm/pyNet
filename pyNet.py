@@ -184,7 +184,7 @@ class Host:
     def send(self,d_ip,message): #封装到运输层
     # 运输层
         message = '|Transport header|'.encode('utf-8')+message
-        msg = '\n运输层报文:\n%s'%message[:LEN]
+        msg = '\n运输层:\n%s'%message[:LEN]
         if len(message)>LEN:
             msg += '...\n'
         append_message(msg)
@@ -597,28 +597,28 @@ host_list[2].router_table['default']='192.168.1.1'
 host_list[3].router_table['default']='192.168.2.1'
 # host_list[0].mac_cache['192.168.0.1'] = router_list[0].macs[1]
 # host_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
-host_list[1].mac_cache['192.168.0.1'] = router_list[0].macs[1]
-host_list[1].mac_cache['192.168.0.2'] = host_list[0].mac
-host_list[2].mac_cache['192.168.1.1'] = router_list[0].macs[0]
-host_list[3].mac_cache['192.168.2.1'] = router_list[0].macs[2]
+# host_list[1].mac_cache['192.168.0.1'] = router_list[0].macs[1]
+# host_list[1].mac_cache['192.168.0.2'] = host_list[0].mac
+# host_list[2].mac_cache['192.168.1.1'] = router_list[0].macs[0]
+# host_list[3].mac_cache['192.168.2.1'] = router_list[0].macs[2]
 host_list[4].router_table['default']='192.168.3.1'
 host_list[5].router_table['default']='192.168.4.4'
-host_list[4].mac_cache['192.168.3.1'] = router_list[1].macs[1]
-host_list[5].mac_cache['192.168.4.4'] = router_list[1].macs[2]
+# host_list[4].mac_cache['192.168.3.1'] = router_list[1].macs[1]
+# host_list[5].mac_cache['192.168.4.4'] = router_list[1].macs[2]
 
 
 router_list[0].router_table['default']='192.168.2.2',2
-router_list[0].mac_cache['192.168.2.2'] = router_list[1].macs[0]
-router_list[0].mac_cache['192.168.0.2'] = host_list[0].mac
-router_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
-router_list[0].mac_cache['192.168.1.3'] = host_list[2].mac
-router_list[0].mac_cache['192.168.2.3'] = host_list[3].mac
+# router_list[0].mac_cache['192.168.2.2'] = router_list[1].macs[0]
+# router_list[0].mac_cache['192.168.0.2'] = host_list[0].mac
+# router_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
+# router_list[0].mac_cache['192.168.1.3'] = host_list[2].mac
+# router_list[0].mac_cache['192.168.2.3'] = host_list[3].mac
 
 router_list[1].router_table['default']='192.168.2.1',0
-router_list[1].mac_cache['192.168.2.1'] = router_list[0].macs[2]
-router_list[1].mac_cache['192.168.2.3'] = host_list[3].mac
-router_list[1].mac_cache['192.168.3.2'] = host_list[4].mac
-router_list[1].mac_cache['192.168.4.2'] = host_list[5].mac
+# router_list[1].mac_cache['192.168.2.1'] = router_list[0].macs[2]
+# router_list[1].mac_cache['192.168.2.3'] = host_list[3].mac
+# router_list[1].mac_cache['192.168.3.2'] = host_list[4].mac
+# router_list[1].mac_cache['192.168.4.2'] = host_list[5].mac
 
 window.update()
 ## net ok ###
