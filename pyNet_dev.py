@@ -1,5 +1,6 @@
-import tkinter as tk
+from tkinter import *
 from PIL import Image, ImageTk
+
 from skimage import io
 import matplotlib.pyplot as plt
 import time
@@ -8,26 +9,151 @@ import os
 import base64
 
 from code_and_decode import *
+from util import *
 
+def mainWindow():
+    window=Tk()
+    window.title('PyNet-alpha')
+    window.resizable(0,0)
+    window.wm_attributes('-topmost',0)
+    # window.wm_attributes('-topmost',1)
+    scale = 0.65
+    WWidth = int(1600*scale)
+    WHeight = int(1000*scale)
+    window.geometry(str(WWidth)+'x'+str(WHeight))
+
+    return window
+
+class ToolBar(Frame):
+    def __init__(self, master):
+        Frame.__init__(self, master)
+        self.place(relx=0, rely=0, relwidth=1, relheight=0.05)
+
+        self.btn1 = Button(self, text="Broswer", relief=GROOVE, command=self.changeTo1)
+        self.btn1.place(relx=0, rely=0, relwidth=0.1, relheight=1)
+        self.btn2 = Button(self, text="Network", relief=GROOVE, command=self.changeTo2)
+        self.btn2.place(relx=0.1, rely=0, relwidth=0.1, relheight=1)
+        self.btn3 = Button(self, text="WireShark", relief=GROOVE, command=self.changeTo3)
+        self.btn3.place(relx=0.2, rely=0, relwidth=0.1, relheight=1)
+
+    def changeTo1(self):
+        broswer.lift() #broswer为全局变量
+
+    def changeTo2(self):
+        network.lift()
+
+    def changeTo3(self):
+        wireshark.lift()
+
+class StatusBar(Frame):
+    def __init__(self, master):
+        Frame.__init__(self, master)
+
+        self.label = Label(self, bd=1, relief=SUNKEN, anchor=CENTER)
+        self.label.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+        self.label.update_idletasks()
+        self.place(relx=0, rely=0.9525, relwidth=1, relheight=0.045)
+
+    def set(self, text):
+        self.label.config(text=text)
+        self.label.update_idletasks()
+
+class Broswer(Frame):
+    def __init__(self, master):
+        Frame.__init__(self, master)
+        self.place(relx= 0, rely=0.05, relwidth=1, relheight=0.9)
+
+        div = Frame(self)
+        div.place(relx=0.5, rely=0.5, anchor=CENTER)
+
+        img = Image.open('img/black.png')
+        photo = ImageTk.PhotoImage(img)
+        logo = Label(div, image=photo)
+        logo.photo = photo #去掉会显示不出图片, 因为图片是局部变量, 没有保存索引就被释放掉了
+        logo.grid(columnspan=3, sticky=W+E+N+S)
+
+        label = Label(div, text="url")
+        label.grid()
+
+        url = Entry(div)
+        url.grid(row=1, column=1, sticky=W+E)
+
+        go = Button(div, bg='pink', text='GO!', command=Send, height=1, width=3)
+        go.grid(row=1, column=2)
+        
+        self.url = url
+        self.go = go
+
+def WireShark(master):
+    wireshark = Frame(window, bg='blue')
+    wireshark.place(relx= 0, rely=0.05, relwidth=1, relheight=0.9)
+    return wireshark
+
+class DrawObj:
+    def __init__(self, canvas):
+        self.canvas=canvas
+        self._width = 0
+        self._height = 0
+        self.x = 0
+        self.y = 0
+        self.item = -1
+    
+    def move_to(self, pos): # pos 为中心位置
+        d_x, d_y = pos[0]-self._width/2, pos[1]-self._height/2
+        self.canvas.coords(self.item, (d_x, d_y))
+        self.x, self.y = pos[0], pos[1]
+
+        global item_to_instance_dic #每一个都调用过move_to
+        item_to_instance_dic[self.item]=self
+    
+class Host_(DrawObj):
+    def __init__(self, canvas):
+        DrawObj.__init__(self, canvas)
+        global img_host
+        self._width = 48
+        self._height = 48
+        self.item = canvas.create_image(0, 0, anchor='nw', image=img_host)
+
+class Router_(DrawObj):
+    def __init__(self, canvas):
+        DrawObj.__init__(self, canvas)
+        global img_router
+        self._width = 40
+        self._height = 40
+        self.item = canvas.create_image(0, 0, anchor='nw', image=img_router)
+
+class Net_(DrawObj):
+    def __init__(self, canvas):
+        DrawObj.__init__(self, canvas)
+        global img_net
+        self._width = 48
+        self._height = 48
+        self.item = canvas.create_image(0, 0, anchor='nw', image=img_net)
+#------------------------BACK END--------------------------
 MAC=0 #每次自增1，确保每台机器mac不同
 B_MAC=2**48-1 #broadcast mac
+LEN = 1000
 
-LEN = 350 #length to show 
+def Send():
+    url = broswer.url.get()
+    src_host.request(url)
 
-if not os.path.exists('tmp'):
-    os.makedirs('tmp')
+def append_message(msg):
+    print(msg)
+
 def transmit(bitstream, __d_net_ip):
-    net_tag_id =int(__d_net_ip.split('.')[-2])
-    # print(net_tag_id)
+    net_id =int(__d_net_ip.split('.')[-2])
+    # print(net_id)
     with open('tmp/bitstream','wb') as file:
         file.write(bitstream)
 
-    def broadcast_to_net(net_tag_id):
-        for host_tag_id in net_list[net_tag_id].child_hosts:
-            host_list[host_tag_id].service()
-        for router_tag_id,port in net_list[net_tag_id].child_routers:
-            router_list[router_tag_id].read(port)
-    broadcast_to_net(net_tag_id)
+    def broadcast_to_net(net_id):
+        for host_id in net_list[net_id].child_hosts:
+            host_list[host_id].service()
+        for router_id,port in net_list[net_id].child_routers:
+            router_list[router_id].read(port)
+    broadcast_to_net(net_id)
 
 def ARP(self_ip, self_mac, req_ip, req='req'):
     '''req取值:'req','rsp',表示是请求还是响应'''
@@ -52,42 +178,17 @@ def ARP(self_ip, self_mac, req_ip, req='req'):
     __d_net_ip = extract_net_ip(req_ip) #can't see
     transmit(bitstream, __d_net_ip) #在指定网络内发射
 
-# class router_table:
-#     def __init__(self):
-#         self.data={}
-
-class Host:
-    def __init__(self,tag_id,canvas):
+class Host(Host_):
+    def __init__(self, id, canvas):
+        Host_.__init__(self, canvas)
         global MAC
         self.mac = MAC;MAC+=1
         self.ip = '0.0.0.0'
         self.router_table = {} #路由表
         self.mac_cache = {} #mac 缓存
 
-        #协议栈数据传递
-        # # 网络层
-        # self.d_ip = '' # 本次请求目的ip
-        # # 数据链路层
-        # self.d_mac = 0 # 下一站mac
-        # self.next_ip = ''
         self.cache = b'' # ip packet slice 解析后的运输层报文缓存
-
-        # 画图使用
-        self.canvas=canvas
-        self.tag_id = tag_id
-        self._width = 48
-        self._height = 48
-        self.x = 0 # image center place, left top,left top,left top as origin
-        self.y = 0
-        self.id=canvas.create_image(0, 0, anchor='nw', image=img_host)
-        global item_to_instance_dic
-        item_to_instance_dic[self.id]=self
-
-    def move_to(self,pos): # pos: (x,y), origin in the left bottom
-        des_y = self.canvas.winfo_height()-pos[1]-self._height
-        self.canvas.coords(self.id,(pos[0],des_y))
-        self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
-
+        self.id = id
     def service(self): # 应用层文件服务
         flag, message, s_ip = self.rcv()
         if 0==flag: #不是自己的消息/或ip packet还未集齐
@@ -282,35 +383,18 @@ class Host:
     #传输层
         message,dic_trans = decode_trans_message(message)
         return 1,message,s_ip
-
-class Router:
-    def __init__(self,tag_id,canvas):
+class Router(Router_):
+    def __init__(self, id, canvas):
+        Router_.__init__(self, canvas)
         global MAC
         self.macs = [MAC,MAC+1,MAC+2];MAC+=3
         self.ips = ['0.0.0.0','0.0.0.0','0.0.0.0']
-        # self.belong_nets = None  #NetCloud tuple, each net for each ip
         self.router_table = {}
         self.mac_cache = {}
 
         #网络层
         self.wait_queue = [] #ip_packet,  get one, send one
-
-
-        self.canvas=canvas
-        self.tag_id = tag_id
-        self._width = 40
-        self._height = 40
-        self.x = 0 #image place, left top,left top,left top as origin
-        self.y = 0
-        self.id=canvas.create_image(0, 0, anchor='nw', image=img_router)
-        global item_to_instance_dic
-        item_to_instance_dic[self.id]=self
-
-    def move_to(self,pos): # pos: (x,y), origin in the left bottom
-        des_y = self.canvas.winfo_height()-pos[1]-self._height
-        self.canvas.coords(self.id,(pos[0],des_y))
-        self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
-
+        self.id = id
     def read(self,port):
         with open('tmp/bitstream','rb') as file:
         # 物理层
@@ -330,7 +414,7 @@ class Router:
             self.wait_queue.append(ip_packet)
 
             # routing
-            msg = 'Router%d get the packet\n'%(self.tag_id)
+            msg = 'Router%d get the packet\n'%(self.id)
             # append_message(msg)
             self.routing(s_mac)
             return 1
@@ -360,14 +444,14 @@ class Router:
         d_net_ip = extract_net_ip(d_ip)
         if d_net_ip in self_net_ip_list:    # 在同一个网络，直接发射
             port = self_net_ip_list.index(d_net_ip)
-            msg = '\nRouter%d resend the packet to port%d\n'%(self.tag_id,port)
+            msg = '\nRouter%d resend the packet to port%d\n'%(self.id,port)
             next_ip = d_ip
         else:                               # 在不同网络，查找路由表
             if self.router_table.get(d_ip)==None:
                 next_ip,port = self.router_table['default']
             else:
                 next_ip,port = self.router_table[d_ip]
-            msg = '\nRouter%d resend the packet to host:%s\n'%(self.tag_id,next_ip)
+            msg = '\nRouter%d resend the packet to host:%s\n'%(self.id,next_ip)
         # search cache for mac or use ARP
         while(1):
             if self.mac_cache.get(next_ip)==None:
@@ -386,64 +470,41 @@ class Router:
         __d_net_ip = extract_net_ip(next_ip)
         transmit(bitstream, __d_net_ip)
 
-class NetCloud:
-    def __init__(self,tag_id,canvas):
-        global MAC
+class Net(Net_):
+    def __init__(self, id, canvas):
+        Net_.__init__(self, canvas)
         self.net_ip = '0.0.0.0'
         self.child_hosts = []
         self.child_routers = []
+        self.id = id
 
-        self.canvas=canvas
-        self.tag_id = tag_id
-        self._width = 48
-        self._height = 48
-        self.x = 0 #image place, left top,left top,left top as origin
-        self.y = 0
-        self.id=canvas.create_image(0, 0, anchor='nw', image=img_net)
-        global item_to_instance_dic
-        item_to_instance_dic[self.id]=self
+#------------------------BACK END--------------------------
 
-    def move_to(self,pos): # pos: (x,y), origin in the left bottom
-        des_y = self.canvas.winfo_height()-pos[1]-self._height
-        self.canvas.coords(self.id,(pos[0],des_y))
-        self.x,self.y = pos[0]+self._width/2,des_y+self._height/2
+# main
+window = mainWindow()
 
-def draw_border():
-    L = [canvas_l,canvas_r,canvas_b]
-    for canvas in L:
-        # print(canvas.winfo_height())
-        canvas.create_rectangle(0+2,0+2,canvas.winfo_width()-2,canvas.winfo_height()-2,width=10)
+# toolbar and status bar
+toolbar = ToolBar(window)
+statusbar = StatusBar(window)
 
-################
-## create window
-################
-window=tk.Tk()
-window.title('PyNet-beta')
-window.resizable(0,0)
-window.wm_attributes('-topmost',0)
-# window.wm_attributes('-topmost',1)
-scale = 0.65
-WWidth = int(1600*scale)
-WHeight = int(1000*scale)
-window.geometry(str(WWidth)+'x'+str(WHeight))
+# three tab (frame)
+#-------------------broswer page---------------------------
+broswer = Broswer(window)
+broswer.url.insert('end','https://192.168.1.3/text.txt')
+#-------------------network page---------------------------
+network = Frame(window)
+network.place(relx= 0, rely=0.05, relwidth=1, relheight=0.9)
+height, width = window.winfo_height()*0.9, window.winfo_width()
 
-# flat, groove, raised, ridge, solid, or sunken
 item_to_instance_dic = {}
-old_label = 0
-def mac_to_str(mac):
-    return '.'.join([hex(e)[2:] for e in int.to_bytes(mac,6,'big')])
-def macstr_to_int(mac_str):
-    L = mac_str.split('.')
-    s = 0
-    a = 1
-    for e in L[-1::-1]: #倒序
-        s += a*int('0x'+e,16)
-        a *= 255
-    return int(s)
+old_label = None
 
+
+def drawRectangle():
+    global src_host
 def show(event):
     global old_label
-    item = canvas_l.find_withtag('current')
+    item = canvas.find_withtag(CURRENT)
     if len(item)!=0:
         instance = item_to_instance_dic[item[0]]
         if instance.__class__.__name__=='Host':
@@ -458,226 +519,120 @@ def show(event):
                    'ip0 : %s\n'%(instance.ips[0])+\
                    'ip1 : %s\n'%(instance.ips[1])+\
                    'ip2 : %s\n'%(instance.ips[2])
-        elif instance.__class__.__name__=='NetCloud':
+        elif instance.__class__.__name__=='Net':
             text = 'net:\n'+\
                    'net_ip : %s\n'%(instance.net_ip)
         else:
             return 0
 
-        if old_label!=0:
+        if old_label!=None:
             old_label.destroy()
-        la = tk.Label(window,text=text)
+        la = Label(network,text=text)
         la.place(relx=0.01,rely=0.02,relwidth=0.12)
         old_label = la
 
-def init_text_message():
-    text_message.delete('1.0', 'end')
-    text_message.insert('end','Message>>')
+def move_src_rect():
+    global src_host, src_rect
+    canvas.coords(src_rect, (src_host.x-src_host._width/2, src_host.y-src_host._height/2,
+                            src_host.x+src_host._width/2, src_host.y+src_host._height/2))
 
-def show_curr_host():  
-    msg = '\ncurrent host:\n'+\
-          '\tmac: %x\n'%(curr_host.mac)+\
-          '\tip : %s\n'%(curr_host.ip)
-    append_message(msg)
+def move_dst_rect():
+    global dst_host, dst_rect
+    canvas.coords(dst_rect, (dst_host.x-dst_host._width/2, dst_host.y-dst_host._height/2,
+                            dst_host.x+dst_host._width/2, dst_host.y+dst_host._height/2))
 
 def change_host(event):
-    global old_label
-    global curr_host
-    item = canvas_l.find_withtag('current')
+    global src_host
+    item = canvas.find_withtag('current')
     if len(item)!=0:
         instance = item_to_instance_dic[item[0]]
         if instance.__class__.__name__=='Host':
-            curr_host = instance
-            init_text_message()
-            show_curr_host()
-
+            src_host = instance
+            statusbar.set('current host: %s\t\tdestination host: %s'%(src_host.ip,dst_host.ip))
+            move_src_rect()
 def change_des_host(event):
-    item = canvas_l.find_withtag('current')
+    global dst_host
+    item = canvas.find_withtag('current')
     if len(item)!=0:
         instance = item_to_instance_dic[item[0]]
         if instance.__class__.__name__=='Host':
-            url = en_url.get()
+            url = broswer.url.get()
             L = url.split('/')
             L[2]=instance.ip
             url_c = '/'.join(L)
-            en_url.delete(0,'end')
-            en_url.insert(0,url_c)
+            broswer.url.delete(0,'end')
+            broswer.url.insert(0,url_c)
 
-canvas_l=tk.Canvas(window)
-canvas_r=tk.Canvas(window)
-canvas_b=tk.Canvas(window)
-canvas_l.place(relx=0,rely=0,relwidth=0.5,relheight=0.8)
-canvas_r.place(relx=0.5,rely=0,relwidth=0.5,relheight=1)
-canvas_b.place(relx=0,rely=0.8,relwidth=0.5,relheight=0.2)
-canvas_l.bind("<Button-1>",show)
-canvas_l.bind("<Double-Button-1>",change_host)
-canvas_l.bind("<Button-3>",change_des_host)
+            dst_host = instance
+            statusbar.set('current host: %s\t\tdestination host: %s'%(src_host.ip,dst_host.ip))
+            move_dst_rect()
 
+canvas = Canvas(network)
+canvas.place(relwidth=1, relheight=1)
+canvas.bind("<Button-1>",show)
+canvas.bind("<Double-Button-1>",change_host)
+canvas.bind("<Button-3>",change_des_host)
 
-window.update()
-draw_border()
-## window ok ###
+host_place=[(0.0625, 0.46875), (0.140625, 0.6875), (0.65, 0.0625), (0.859375, 0.3125), (0.4, 0.9), (0.884375, 0.578125)]
+net_place=[(0.25, 0.5), (0.46875, 0.1796875), (0.65625, 0.3984375), (0.5, 0.75), (0.7, 0.703125)]
+router_place=[(0.36875, 0.390625), (0.525, 0.55)]
 
-################
-## create img
-################
-# img_router = tk.PhotoImage(file='img/router.gif')
-# img_net = tk.PhotoImage(file='img/net.gif')
-# img_host = tk.PhotoImage(file='img/host.gif')
-
+# list
+host_list=[]
+router_list=[]
+net_list=[]
 img = Image.open('img/router.png')
 img_router = ImageTk.PhotoImage(img)
 img = Image.open('img/net.png')
 img_net = ImageTk.PhotoImage(img)
 img = Image.open('img/host.png')
 img_host = ImageTk.PhotoImage(img)
-
-host_place=[(20,410),(85,580),(520,90),(650,300),(300,770),(740,500)]
-net_place=[(170,440),(340,185),(490,360),(370,635),(590,600)]
-router_place=[(340,350),(480,500)]
-
-host_list = []
-router_list = []
-net_list = []
-for i,place in enumerate(host_place):
-    host = Host(i,canvas_l)
-    host.move_to((scale*place[0],scale*(800-place[1])))
+# draw and append list
+for i, place in enumerate(host_place):
+    host = Host(i, canvas)
+    host.move_to((place[0]*width, place[1]*height))
     host_list.append(host)
-for i,place in enumerate(router_place):
-    router = Router(i,canvas_l)
-    router.move_to((scale*place[0],scale*(800-place[1])))
-    router_list.append(router)
-for i,place in enumerate(net_place):
-    net = NetCloud(i,canvas_l)
-    net.move_to((scale*place[0],scale*(800-place[1])))
+for i, place in enumerate(net_place):
+    net = Net(i, canvas)
+    net.move_to((place[0]*width, place[1]*height))
     net_list.append(net)
-window.update()
-## image ok ####
+for i, place in enumerate(router_place):
+    router = Router(i, canvas)
+    router.move_to((place[0]*width, place[1]*height))
+    router_list.append(router)
 
+# configure net
+configure_net(net_list, host_list, router_list)
 
-################
-## configure net
-################
-net_list[0].child_hosts=[0,1]
-net_list[0].child_routers=[(0,1)] # R0 port 1
-net_list[0].net_ip = '192.168.0.0'
-host_list[0].ip = '192.168.0.2'
-host_list[1].ip = '192.168.0.7'
-router_list[0].ips[1] = '192.168.0.1'
-
-net_list[1].child_hosts=[2]
-net_list[1].child_routers=[(0,0)]
-net_list[1].net_ip = '192.168.1.0'
-host_list[2].ip = '192.168.1.3'
-router_list[0].ips[0] = '192.168.1.1'
-
-net_list[2].child_hosts=[3]
-net_list[2].child_routers=[(0,2),(1,0)]
-net_list[2].net_ip = '192.168.2.0'
-host_list[3].ip = '192.168.2.3'
-router_list[0].ips[2] = '192.168.2.1'
-router_list[1].ips[0] = '192.168.2.2'
-
-net_list[3].child_hosts=[4]
-net_list[3].child_routers=[(1,1)]
-net_list[3].net_ip = '192.168.3.0'
-host_list[4].ip = '192.168.3.2'
-router_list[1].ips[1] = '192.168.3.1'
-
-net_list[4].child_hosts=[5]
-net_list[4].child_routers=[(1,2)]
-net_list[4].net_ip = '192.168.4.0'
-host_list[5].ip = '192.168.4.2'
-router_list[1].ips[2] = '192.168.4.4'
-
-#### router table && mac cache 
-host_list[0].router_table['default']='192.168.0.1'
-host_list[1].router_table['default']='192.168.0.1'
-host_list[2].router_table['default']='192.168.1.1'
-host_list[3].router_table['default']='192.168.2.1'
-# host_list[0].mac_cache['192.168.0.1'] = router_list[0].macs[1]
-# host_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
-# host_list[1].mac_cache['192.168.0.1'] = router_list[0].macs[1]
-# host_list[1].mac_cache['192.168.0.2'] = host_list[0].mac
-# host_list[2].mac_cache['192.168.1.1'] = router_list[0].macs[0]
-# host_list[3].mac_cache['192.168.2.1'] = router_list[0].macs[2]
-host_list[4].router_table['default']='192.168.3.1'
-host_list[5].router_table['default']='192.168.4.4'
-# host_list[4].mac_cache['192.168.3.1'] = router_list[1].macs[1]
-# host_list[5].mac_cache['192.168.4.4'] = router_list[1].macs[2]
-
-
-router_list[0].router_table['default']='192.168.2.2',2
-# router_list[0].mac_cache['192.168.2.2'] = router_list[1].macs[0]
-# router_list[0].mac_cache['192.168.0.2'] = host_list[0].mac
-# router_list[0].mac_cache['192.168.0.7'] = host_list[1].mac
-# router_list[0].mac_cache['192.168.1.3'] = host_list[2].mac
-# router_list[0].mac_cache['192.168.2.3'] = host_list[3].mac
-
-router_list[1].router_table['default']='192.168.2.1',0
-# router_list[1].mac_cache['192.168.2.1'] = router_list[0].macs[2]
-# router_list[1].mac_cache['192.168.2.3'] = host_list[3].mac
-# router_list[1].mac_cache['192.168.3.2'] = host_list[4].mac
-# router_list[1].mac_cache['192.168.4.2'] = host_list[5].mac
-
-window.update()
-## net ok ###
-################
-## Draw lines
-################
-def put_bottom(cv,tag_id):
-    tags = cv.find_below(tag_id)
-    while len(tags)!=0:
-        cv.tag_lower(tag_id,tags)
-        tags = cv.find_below(tag_id)
-# print(len(net_list))
+# draw line
 for net in net_list:
-    for host_tag_id in net.child_hosts:
-        line = canvas_l.create_line(net.x,net.y,
-                host_list[host_tag_id].x,
-                host_list[host_tag_id].y,width = 3)
-        put_bottom(canvas_l,line)
-    # print(net.child_routers)
-    for router_tag_id,_ in net.child_routers:
-        line = canvas_l.create_line(net.x,net.y,
-                router_list[router_tag_id].x,
-                router_list[router_tag_id].y,width = 3)
-        put_bottom(canvas_l,line)
+    for host_id in net.child_hosts:
+        line = canvas.create_line(net.x,net.y,
+                host_list[host_id].x,
+                host_list[host_id].y,width = 3)
+        put_bottom(canvas,line)
+    for router_id,_ in net.child_routers:
+        line = canvas.create_line(net.x,net.y,
+                router_list[router_id].x,
+                router_list[router_id].y,width = 3)
+        put_bottom(canvas,line)
+
+src_host = host_list[0]
+dst_host = host_list[2]
+statusbar.set('current host: %s\t\tdestination host: %s'%(src_host.ip,dst_host.ip))
+
+src_rect = canvas.create_rectangle((src_host.x-src_host._width/2, src_host.y-src_host._height/2),
+                                    (src_host.x+src_host._width/2, src_host.y+src_host._height/2),
+                                    width=3, outline='green')
+dst_rect = canvas.create_rectangle((dst_host.x-dst_host._width/2, dst_host.y-dst_host._height/2),
+                                    (dst_host.x+dst_host._width/2, dst_host.y+dst_host._height/2),
+                                    width=3, outline='red')
+#----------------------------------------------------------
 
 
-################
-## Send
-################
-def append_message(s):
-    text_message.insert('end',s)
+wireshark = WireShark(window)
+toolbar.btn2.invoke() #default tab
 
-def Send():
-    init_text_message()
-    url = en_url.get()
-    curr_host.request(url)
 
-# current host
-curr_host = host_list[0];
-
-en_url = tk.Entry(window)
-btn_send = tk.Button(window,text="Go!",command= Send)
-# text_message = tk.Text(window, height=10)
-
-from tkinter.scrolledtext import ScrolledText
-text_message = ScrolledText(window,font=("隶书",18))
-
-en_url.place(relx=0.05, rely=0.8+0.05, relwidth=0.2, relheight=0.05)
-btn_send.place(relx=0.3+0.05, rely=0.8+0.05, relwidth=0.05,relheight=0.05)
-text_message.place(relx=0.5+0.005, rely=0+0.008, relwidth=0.5-0.01,relheight=1-0.015)
-
-init_text_message()
-show_curr_host()
-
-#for debug
-en_url.insert('end','https://192.168.1.3/text.txt')
-
-window.update()
-# widget ok
-
-window.mainloop()
-
+if __name__=="__main__":
+    window.mainloop()
