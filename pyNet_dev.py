@@ -85,9 +85,30 @@ class Broswer(Frame):
         self.url = url
         self.go = go
 
+def add(src_ip, layer, data):
+    global Database, lb
+    t = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    if layer=='A':
+        layer='Application'
+    elif layer=='T':
+        layer='Transport'
+    elif layer=='N':
+        layer='Network'
+    elif layer=='D':
+        layer='Data Link'
+    elif layer=='P':
+        layer='Physic'
+    elif layer=='N(ARP)':
+        layer='Network(ARP)'
+    else:
+        layer='Error'
+    Database.append((src_ip, layer, t, data))
+    lb.insert(END, src_ip+'/'+layer+'/'+t)
+
 def WireShark(master):
     wireshark = Frame(window, bg='blue')
     wireshark.place(relx= 0, rely=0.05, relwidth=1, relheight=0.9)
+    
     return wireshark
 
 class DrawObj:
@@ -133,8 +154,7 @@ class Net_(DrawObj):
 #------------------------BACK END--------------------------
 MAC=0 #每次自增1，确保每台机器mac不同
 B_MAC=2**48-1 #broadcast mac
-LEN = 1000
-
+NO_SLICE = 0
 def Send():
     url = broswer.url.get()
     src_host.request(url)
@@ -143,8 +163,7 @@ def append_message(msg):
     print(msg)
 
 def transmit(bitstream, __d_net_ip):
-    net_id =int(__d_net_ip.split('.')[-2])
-    # print(net_id)
+    net_id =int(__d_net_ip.split('.')[-2]) #网络序号刚好和网络ip有对应关系
     with open('tmp/bitstream','wb') as file:
         file.write(bitstream)
 
@@ -155,24 +174,26 @@ def transmit(bitstream, __d_net_ip):
             router_list[router_id].read(port)
     broadcast_to_net(net_id)
 
+# 简单实现ARP协议
 def ARP(self_ip, self_mac, req_ip, req='req'):
     '''req取值:'req','rsp',表示是请求还是响应'''
     if req=='req':
-        msg = '\n\n%s向%s发出ARP请求\n'%(self_ip,req_ip)
+        msg = '%s向%s发出ARP请求\n'%(self_ip,req_ip)
     else:
-        msg = '\n\n%s响应来自%s的ARP请求\n'%(self_ip,req_ip)
+        msg = '%s响应来自%s的ARP请求\n'%(self_ip,req_ip)
     append_message(msg)
 # 网络层(ARP协议)
     ip_header = encode_IP_segment(d_ip=req_ip, ip=self_ip, protocol=255)
-    ip_data = (req+'|'+self_ip+'|'+mac_to_str(self_mac)+'|'+req_ip).encode('utf-8')
+    ip_data = (req+'|'+self_ip+'|'+mac_to_str(self_mac)+'|'+req_ip).encode('utf-8') #ARP报文格式
 
     ip_packet = ip_header + ip_data
+
+    add(self_ip, 'N(ARP)', ip_packet) #ARP分组
 # 数据链路层 
     d_mac = B_MAC #全为1, 广播
     frame = encode_frame(d_mac,self_mac,ip_packet)
 # 物理层
     bitstream = b'START'+frame
-    msg = '\n物理层 bitstream:\n%s'%bitstream[:LEN]
 
     # put the bitstream on the bus
     __d_net_ip = extract_net_ip(req_ip) #can't see
@@ -195,16 +216,16 @@ class Host(Host_):
             return 0
 
         #应用层
-        body,dic_appli = decode_appli_message(message)
+        body, dic_appli, extend_dic = decode_appli_message(message)
 
         #is Request
         if dic_appli['type']=='Request':
-            msg = '\nhost: %s get request from host: %s\n'%(self.ip,s_ip)
+            msg = '%s get request from %s\n'%(self.ip,s_ip)
             append_message(msg)
 
             # response
-            File = dic_appli['File']
-            Accept = dic_appli['Accept']
+            File = extend_dic['File']
+            Accept = extend_dic['Accept']
             
             if os.path.exists('src/'+File):
                 State = 1 #可响应，200 ok
@@ -237,27 +258,26 @@ class Host(Host_):
                 Body = b'' # empty
 
             message = encode_response(State,dic,Body)
-            # print(message)
-            msg = '\n应用层报文:\n%s'%message
-            if len(msg)>LEN:
-                msg = msg[:LEN]+'......\n'
+            add(self.ip, 'A', message)
+            msg = '%s want to send a response to %s\n'%(self.ip,s_ip)
             append_message(msg)
 
             self.send(s_ip,message)
 
         # is Response
         elif dic_appli['type']=='Response':
-            msg = '\nhost: %s get response from host: %s\n'%(self.ip,s_ip)
+            msg = '%s get response from %s\n'%(self.ip,s_ip)
             append_message(msg)
 
             # show
             from uuid import uuid1
             if dic_appli['state_code']!='200':
                 print(dic_appli['state_code']+dic_appli['description'])
-            elif dic_appli['FileType']=='text':
-                print(body.decode('utf-8'))
-            elif dic_appli['FileType']=='img':
-                file_name = dic_appli['File']
+            elif extend_dic['FileType']=='text':
+                # print(body.decode('utf-8'))
+                pass
+            elif extend_dic['FileType']=='img':
+                file_name = extend_dic['File']
                 file_ex = file_name.split('.')[1]
                 u_name = str(uuid1())+'.'+file_ex
                 with open('tmp/'+u_name,'wb') as fp:
@@ -275,35 +295,23 @@ class Host(Host_):
     # 应用层
         message,d_ip = encode_request(url)
 
-        msg = '\n应用层报文:\n%s'%message[:LEN]
-        if len(message)>LEN:
-            msg += '...\n'
+        add(self.ip, 'A', message)
+        msg = '%s want to send a request to %s\n'%(self.ip, d_ip)
         append_message(msg)
-
         self.send(d_ip,message)
 
     def send(self,d_ip,message): #封装到运输层
     # 运输层
         message = '|Transport header|'.encode('utf-8')+message
-        msg = '\n运输层:\n%s'%message[:LEN]
-        if len(message)>LEN:
-            msg += '...\n'
-        append_message(msg)
+        add(self.ip, 'T', message)
     # 网络层
-        ip_packet_queue = slice(message,d_ip,self.ip,MTU=1400)
+        if NO_SLICE:
+            ip_packet_queue = [encode_IP_segment(d_ip, self.ip)+message]
+        else:
+            ip_packet_queue = slice(message,d_ip,self.ip,MTU=1400)
         for i,ip_packet in enumerate(ip_packet_queue):
-            if i<2:
-                msg = '\n网络层 sending packet slice %d:\n'%(i)
-                msg += '%s'%ip_packet[:LEN]
-                if len(ip_packet)>LEN:
-                    msg += '...\n'
-                append_message(msg)
-            elif i==len(ip_packet_queue)-1:
-                msg = '\n网络层 sending last packet slice %d:\n'%(i)
-                msg += '...%s\n'%ip_packet[-LEN:]
-                append_message(msg)
-            else:
-                append_message('sending packet slice %d...\n'%(i))
+            if not NO_SLICE:
+                append_message('%s sending packet slice %d...\n'%(self.ip, i))
 
             d_net_ip = extract_net_ip(d_ip)
             if d_net_ip==extract_net_ip(self.ip): # 同一局域网
@@ -319,24 +327,17 @@ class Host(Host_):
                 if self.mac_cache.get(next_ip)==None:
                     # print('error,host can\'t find mac')
                     #ARP
-                    ARP(self.ip, self.mac, next_ip)
+                    ARP(self.ip, self.mac, next_ip) #ARP完成后mac_cache必有值
                 else:
                     d_mac = self.mac_cache[next_ip]
                     break
+            add(self.ip, 'N', ip_packet)
         # 数据链路层
             frame = encode_frame(d_mac,self.mac,ip_packet)
-            if i == 0:
-                msg = '\n数据链路层 frame:\n%s'%frame[:LEN]
-                if len(frame)>LEN:
-                    msg += '...\n'
-                append_message(msg)
+            add(self.ip, 'D', frame)
         # 物理层
             bitstream = b'START'+frame
-            if i == 0:
-                msg = '\n物理层 bitstream:\n%s'%bitstream[:LEN]
-                if len(bitstream)>LEN:
-                    msg += '...\n'
-                append_message(msg)
+            add(self.ip, 'P', bitstream)
 
             # put the bitstream on the bus
             __d_net_ip = extract_net_ip(next_ip) #can't see
@@ -372,11 +373,11 @@ class Host(Host_):
         self.cache += message
         if dic_net['标志'] == 5: #More Fragment
             i = dic_net['片偏移']*8//dic_net['总长度']
-            msg = '\nreceiving packet slice %d...\n'%(i)
+            msg = '%s receiving packet slice %d...\n'%(self.ip, i)
             append_message(msg)
             return 0,b'',''
         message = self.cache #已集齐
-        append_message('\n切片集齐\n')
+        append_message('%s 切片集齐\n'%(self.ip))
         self.cache = b'' #清空缓存
 
         s_ip = dic_net['源地址']
@@ -414,8 +415,6 @@ class Router(Router_):
             self.wait_queue.append(ip_packet)
 
             # routing
-            msg = 'Router%d get the packet\n'%(self.id)
-            # append_message(msg)
             self.routing(s_mac)
             return 1
 
@@ -438,20 +437,19 @@ class Router(Router_):
                 port = self.ips.index(req_ip)
                 ARP(self.ips[port], self.macs[port], src_ip, req='rsp')
             return 
-        # if s_mac==2:
-        #     print(dic_net)
+
         self_net_ip_list = [extract_net_ip(ip) for ip in self.ips]
         d_net_ip = extract_net_ip(d_ip)
         if d_net_ip in self_net_ip_list:    # 在同一个网络，直接发射
             port = self_net_ip_list.index(d_net_ip)
-            msg = '\nRouter%d resend the packet to port%d\n'%(self.id,port)
+            msg = 'Router%d resend the packet to port%d\n'%(self.id,port)
             next_ip = d_ip
         else:                               # 在不同网络，查找路由表
             if self.router_table.get(d_ip)==None:
                 next_ip,port = self.router_table['default']
             else:
                 next_ip,port = self.router_table[d_ip]
-            msg = '\nRouter%d resend the packet to host:%s\n'%(self.id,next_ip)
+            msg = 'Router%d resend the packet to host:%s\n'%(self.id,next_ip)
         # search cache for mac or use ARP
         while(1):
             if self.mac_cache.get(next_ip)==None:
@@ -461,7 +459,7 @@ class Router(Router_):
             else:
                 d_mac = self.mac_cache[next_ip]
                 break
-        # append_message(msg)
+        append_message(msg)
     # 数据链路层
             # 改变 src 和 des mac
         frame = encode_frame(d_mac,self.macs[port],ip_packet)
@@ -478,7 +476,7 @@ class Net(Net_):
         self.child_routers = []
         self.id = id
 
-#------------------------BACK END--------------------------
+#------------------------END--------------------------
 
 # main
 window = mainWindow()
@@ -542,7 +540,7 @@ def move_dst_rect():
                             dst_host.x+dst_host._width/2, dst_host.y+dst_host._height/2))
 
 def change_host(event):
-    global src_host
+    global src_host, Database
     item = canvas.find_withtag('current')
     if len(item)!=0:
         instance = item_to_instance_dic[item[0]]
@@ -550,8 +548,12 @@ def change_host(event):
             src_host = instance
             statusbar.set('current host: %s\t\tdestination host: %s'%(src_host.ip,dst_host.ip))
             move_src_rect()
+
+            lb.delete(0, END)
+            detail.delete('1.0',END)
+            Database = []
 def change_des_host(event):
-    global dst_host
+    global dst_host, Database
     item = canvas.find_withtag('current')
     if len(item)!=0:
         instance = item_to_instance_dic[item[0]]
@@ -566,6 +568,10 @@ def change_des_host(event):
             dst_host = instance
             statusbar.set('current host: %s\t\tdestination host: %s'%(src_host.ip,dst_host.ip))
             move_dst_rect()
+
+            lb.delete(0, END)
+            detail.delete('1.0',END)
+            Database = []
 
 canvas = Canvas(network)
 canvas.place(relwidth=1, relheight=1)
@@ -627,12 +633,95 @@ src_rect = canvas.create_rectangle((src_host.x-src_host._width/2, src_host.y-src
 dst_rect = canvas.create_rectangle((dst_host.x-dst_host._width/2, dst_host.y-dst_host._height/2),
                                     (dst_host.x+dst_host._width/2, dst_host.y+dst_host._height/2),
                                     width=3, outline='red')
-#----------------------------------------------------------
-
-
+#----------------------network page end---------------------------
+#----------------------wireshark page---------------------------
 wireshark = WireShark(window)
-toolbar.btn2.invoke() #default tab
+lb = Listbox(wireshark, bg='yellow')
+lb.place(relwidth=0.3, relheight=1)
 
+detail = Text(wireshark)
+detail.place(relx=0.3, relwidth=0.7, relheight=1)
+
+Database = [] # (src_ip, layer, timestump, data)
+def display(event):
+    sels = list(map(int, lb.curselection()))
+    
+    entry = Database[sels[0]]
+
+    #clear content
+    detail.delete('1.0', END)
+    if entry[1]=="Application":
+        detail.insert(END, '应用层\n\n', ('h1'))
+
+        body, dic_appli, extend_dic = decode_appli_message(entry[3])
+
+        for key, value in dic_appli.items():
+            detail.insert(END, key, ('h2'))
+            detail.insert(END, ':\t'+value+'\n\n')
+        for key, value in extend_dic.items():
+            detail.insert(END, key, ('h2'))
+            detail.insert(END, ':\t'+value+'\n\n')
+        detail.insert(END, 'Body', ('h2'))
+        detail.insert(END, ':\n%s'%(body), ('body'))
+
+        detail.insert(END, '\n\nRaw', ('h2'))
+        detail.insert(END, ':\n%s'%(entry[3]), ('raw'))
+    elif entry[1]=="Transport":
+        detail.insert(END, '运输层\n\n', ('h1'))
+        detail.insert(END, '\n\nRaw', ('h2'))
+        detail.insert(END, ':\n%s'%(entry[3]), ('raw'))
+    elif entry[1]=="Network":
+        detail.insert(END, '网络层\n\n', ('h1'))
+        
+        message, dic = decode_IP_segment(entry[3])
+
+        for key, value in dic.items():
+            detail.insert(END, key, ('h2'))
+            detail.insert(END, ':\t'+str(value)+'\n\n')
+
+        detail.insert(END, '\n\nRaw', ('h2'))
+        detail.insert(END, ':\n%s'%(entry[3]), ('raw'))
+    elif entry[1]=="Network(ARP)":
+        detail.insert(END, '网络层(ARP)\n\n', ('h1'))
+        
+        message, dic = decode_IP_segment(entry[3])
+        #解析ARP
+        ARP_message = message.decode('utf-8')
+        req, src_ip, src_mac, req_ip = ARP_message.split('|')
+
+        dic['req'] = req
+        dic['src_ip'] = src_ip
+        dic['src_mac'] = src_mac
+        dic['req_ip'] = req_ip
+        for key, value in dic.items():
+            detail.insert(END, key, ('h2'))
+            detail.insert(END, ':\t'+str(value)+'\n\n')
+
+        detail.insert(END, '\n\nRaw', ('h2'))
+        detail.insert(END, ':\n%s'%(entry[3]), ('raw'))
+    elif entry[1]=="Data Link":
+        detail.insert(END, '数据链路层\n\n', ('h1'))
+        
+        ip_packet, dic = decode_frame(entry[3])
+
+        for key, value in dic.items():
+            detail.insert(END, key, ('h2'))
+            detail.insert(END, ':\t'+str(value)+'\n\n')
+
+        detail.insert(END, '\n\nRaw', ('h2'))
+        detail.insert(END, ':\n%s'%(entry[3]), ('raw'))
+    elif entry[1]=="Physic":
+        detail.insert(END, '物理层\n\n', ('h1'))
+        detail.insert(END, '\n\nRaw', ('h2'))
+        detail.insert(END, ':\n%s'%(entry[3]), ('raw'))
+    else:
+        print('no define type in display function')
+    detail.tag_config('h1', font=("Times", 18, "bold"), foreground='red')
+    detail.tag_config('h2', font=("Times", 12, "bold"), foreground='blue')
+lb.bind('<Double-Button-1>', display)
+#----------------------wireshark page end---------------------------
 
 if __name__=="__main__":
+    NO_SLICE = 1
+    toolbar.btn2.invoke() #default tab
     window.mainloop()

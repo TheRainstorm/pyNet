@@ -50,7 +50,9 @@ def decode_appli_message(message):
     header = message[:header_end_i]
     body = message[body_start_i:]
 
+
     dic ={}
+    extend_dic = {} #可选键值对
     L = header.decode('utf-8').split('\r')
     L = [e.strip() for e in L]
     first_line = L[0].split(' ') #第一行的3个元素
@@ -65,7 +67,7 @@ def decode_appli_message(message):
         for line in L[1:]:
             key,value = line.split(' ')
             key = key[:-1] # exclude ':'
-            dic[key]=value
+            extend_dic[key]=value
     else:
         state_code = first_line[1]
         description = first_line[2]
@@ -76,9 +78,9 @@ def decode_appli_message(message):
         for line in L[1:]:
             key,value = line.split(' ')
             key = key[:-1] # exclude ':'
-            dic[key]=value
+            extend_dic[key]=value
 
-    return body,dic
+    return body, dic, extend_dic
 
 # 传输层
 def decode_trans_message(message):
