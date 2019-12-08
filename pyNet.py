@@ -103,7 +103,7 @@ def add(src_ip, layer, data):
     else:
         layer='Error'
     Database.append((src_ip, layer, t, data))
-    lb.insert(END, src_ip+'/'+layer+'/'+t)
+    lb.insert(END, '%s/%-20s/%s'%(src_ip, layer, t))
 
 def WireShark(master):
     wireshark = Frame(window, bg='blue')
@@ -579,9 +579,9 @@ canvas.bind("<Button-1>",show)
 canvas.bind("<Double-Button-1>",change_host)
 canvas.bind("<Button-3>",change_des_host)
 
-host_place=[(0.0625, 0.46875), (0.140625, 0.6875), (0.65, 0.0625), (0.859375, 0.3125), (0.4, 0.9), (0.884375, 0.578125)]
-net_place=[(0.25, 0.5), (0.46875, 0.1796875), (0.65625, 0.3984375), (0.5, 0.75), (0.7, 0.703125)]
-router_place=[(0.36875, 0.390625), (0.525, 0.55)]
+host_place=[(0.06, 0.45), (0.15, 0.6875), (0.65, 0.0625), (0.8, 0.32), (0.33, 0.8), (0.83, 0.55)]
+net_place=[(0.25, 0.5), (0.45, 0.15), (0.6, 0.32), (0.5, 0.75), (0.7, 0.7)]
+router_place=[(0.4, 0.4), (0.6, 0.55)]
 
 # list
 host_list=[]
@@ -722,6 +722,9 @@ lb.bind('<Double-Button-1>', display)
 #----------------------wireshark page end---------------------------
 
 if __name__=="__main__":
-    NO_SLICE = 1
-    toolbar.btn2.invoke() #default tab
+    if not os.path.exists('tmp'):
+        os.makedirs('tmp')
+    
+    NO_SLICE = 0 #0: need slice
+    toolbar.btn1.invoke() #default tab
     window.mainloop()
