@@ -615,12 +615,12 @@ for net in net_list:
     for host_id in net.child_hosts:
         line = canvas.create_line(net.x,net.y,
                 host_list[host_id].x,
-                host_list[host_id].y,width = 3)
+                host_list[host_id].y,width = 2)
         put_bottom(canvas,line)
     for router_id,_ in net.child_routers:
         line = canvas.create_line(net.x,net.y,
                 router_list[router_id].x,
-                router_list[router_id].y,width = 3)
+                router_list[router_id].y,width = 2)
         put_bottom(canvas,line)
 
 src_host = host_list[0]
