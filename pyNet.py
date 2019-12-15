@@ -1,7 +1,6 @@
 from tkinter import *
 from PIL import Image, ImageTk
 
-from skimage import io
 import matplotlib.pyplot as plt
 import time
 import random
@@ -282,9 +281,12 @@ class Host(Host_):
                 u_name = str(uuid1())+'.'+file_ex
                 with open('tmp/'+u_name,'wb') as fp:
                     fp.write(base64.b64decode(body))
-                img = io.imread('tmp/'+u_name)
-                io.imshow(img)
-                io.show()
+                # img = io.imread('tmp/'+u_name)
+                # io.imshow(img)
+                # io.show()
+                img = Image.open('tmp/'+u_name)
+                plt.imshow(img)
+                plt.show()
             else:
                 print('File type don\'t support!\n')
         else:
