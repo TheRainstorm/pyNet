@@ -1,0 +1,9 @@
+1 Requirements
+使用python 3.x版本
+
+需安装matplotlib, Pillow两个库
+$pip install matplotlib Pillow
+
+2 Run
+cd 到项目文件夹下
+$python pyNet.py

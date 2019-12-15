@@ -34,8 +34,10 @@
 - 实现TCP的拥塞控制
 
 ## requirements
-matplotlib
-Pillow
+python 3.x
+
+matplotlib (pip install matplotlib)
+Pillow (pip install Pillow)
 
 ## 参考
 - Tkinter 参考[http://effbot.org/tkinterbook/tkinter-index.htm](http://effbot.org/tkinterbook/tkinter-index.htm)
